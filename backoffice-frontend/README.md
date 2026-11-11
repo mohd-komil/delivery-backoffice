@@ -1,0 +1,227 @@
+# Delivery Backoffice — frontend
+
+Самостоятельный Next.js 16.4.4 / React 19.3.1 / TypeScript 6.0.3 проект. Работает только через HTTP API соседнего NestJS backend. Подключений к PostgreSQL и серверных entities в браузере нет.
+
+Услуги по товарным строкам, выбор операций и количеств при бронировании, доступный остаток и проверка старых визитов описаны в [visit-work-scope.md](docs/visit-work-scope.md). Документ также объясняет повторное подтверждение клиента после изменения работ и содержит результаты проверок этапа.
+
+Причины частично выполненных и невыполненных работ по каждой позиции в History, исходные заказы и сохранение старых отчётов описаны в [incomplete-work-history.md](docs/incomplete-work-history.md).
+
+## Nearby work в Inbox to plan
+
+При открытии доставки из Inbox блок **Nearby work** автоматически загружает доступные работы в радиусе 10 км. Радиус меняется от 1 до 50 км, расстояния считаются по прямой на backend без Google API. В списке видны Picking, заказы, адрес, виды оставшихся работ, количества и оценка длительности. Выбранная доставка включается первой, остальные остановки отмечаются флажками. Кнопка **Create draft** сохраняет новый черновик через обычный авторизованный API, **Open draft** открывает его в Routes.
+
+Создание черновика не бронирует визиты, машину или бригаду. Первый настроенный склад и текущее время — предварительные значения, которые диспетчер проверяет в Routes. При неизвестной длительности используется явно обозначенная оценка 30 минут. Максимум 30 остановок. Радиус, выбор и прокрутка сохраняются при Refresh и смене вкладки карточки. После уменьшения радиуса невидимые работы снимаются с выбора. Повтор отправки после сетевой ошибки использует тот же запрос и не создаёт дубль.
+
+Демо-координаты, повторяемая команда заполнения и ожидаемые расстояния описаны в [nearby-work-demo.md](../backoffice-backend/docs/nearby-work-demo.md). Это синтетические ориентиры для вымышленных адресов, не подтверждённые въезды и не результат геокодирования. Дорожное время не вычисляется из расстояния по прямой.
+
+## Запуск
+
+Требуется установленный Node.js (проверено на 26.13.0), npm и запущенный backend с локальными миграциями, импортом и demo-сценарием. Команды backend описаны в его README.
+
+```powershell
+cd C:/Users/MOHD/Desktop/backoffice/backoffice-frontend
+npm ci
+npm run dev
+```
+
+Открыть http://127.0.0.1:3000. Использовать именно `127.0.0.1`, поскольку backend проверяет origin `http://127.0.0.1:3000`, а cookie предназначена для этого локального сайта. Аккаунты admin/operator создаёт backend; вымышленные локальные учётные данные находятся в его **неотслеживаемом** `.local/demo-accounts.json`. Пароли не включаются в frontend, исходники или отчёты.
+
+По умолчанию API — `http://127.0.0.1:3001/api`. При изменении порта скопировать `.env.example` в `.env.local`, изменить публичный URL и согласовать разрешённый frontend origin на backend. В `.env.local` frontend не должно быть паролей или DB URL.
+
+Production-сборка для локальной проверки:
+
+```powershell
+# Перед build/verify остановить frontend server (next dev или next start).
+npm run build
+
+# Либо все четыре проверки последовательно:
+npm run verify
+npm start
+```
+
+Оба сервера привязаны к loopback. Это локальный тест, без deployment и без frontoffice.
+
+## Что реализовано
+
+- Интерфейс на английском (по умолчанию), узбекском (латиница), итальянском и русском. Переключатель **Language** доступен на входе и в шапке. Next.js читает сохранённый выбор из cookie, а `next-intl` подставляет сообщения из `src/i18n/messages/`. Ссылки сохраняют текущий формат, расписание использует Europe/Rome. Имена, описания, заметки, снимки задач и исходные диагностические данные отображаются как записаны.
+- Login/password, настоящая HttpOnly session-cookie, выход; браузер не хранит токен в localStorage.
+- Восемь представлений доставок с серверными счётчиками и пагинацией. Issues и returns могут пересекаться с прогрессом.
+- Значок ⓘ рядом с заголовком объясняет назначение экрана и с чего начать. Подсказка открывается при наведении, с клавиатуры или касанием и учитывает выбранный статус доставки или вкладку справочника.
+- Карточка клиента, source picking с одним или несколькими sales orders, принадлежность отдельных товарных строк заказам, канонические количества выполнения из backend; неизвестные поля показаны явно.
+- Локальные инструкции, несколько визитов, несколько бригад на визит, снимки участников и шаблонов, перенос/отмена с причиной, обязательные checklist и мотивированный operator waiver.
+- После назначения бригады **Awaiting customer confirmation** виден в карточке визита, календарях и Visit staffing. Admin или operator записывает согласие клиента в **Visits & tasks → Record customer confirmation**. После переноса на другое время согласие записывается заново; предыдущая запись доступна в History. Проверено в Chrome; все 78 frontend-тестов, typecheck, typed lint и сборка прошли.
+- В booking и reschedule поля Starts at / Ends at используют нативный выбор даты и времени. Ввод трактуется как Europe/Rome независимо от часового пояса компьютера и передаётся API как canonical UTC ISO. Несуществующий весенний час отклоняется; для повторяющегося осеннего часа требуется явный выбор occurrence с UTC offset. При переносе сохраняются исходный occurrence, секунды и миллисекунды.
+- День/неделя календаря Europe/Rome, список визитов, параллельные колонки ресурсов. Ось отражает фактически прошедшие минуты от местной полуночи: DST-дни имеют 23/25 часов, повторённый час снабжён UTC offset.
+- Независимый справочник Participants: имя, фамилия, предпочтительное имя, телефон, адрес, external/enabled; неизвестные поля мигрированных профилей явно пусты. Admin создаёт/редактирует полные профили; operator читает. Admin может задать необязательные будущие frontoffice credentials: новый login требует новый пароль 15–256 символов, пароль не возвращается и не подставляется. Frontoffice или вход участника не создаются.
+- Бригады хранят default roster из существующих participant IDs; пустой состав допустим, участник входит не более чем в одну обычную бригаду, включая disabled. В назначении визита можно выбрать других доступных людей. В Visit staffing есть дата, таблица фактических участников и единая форма всех бригад визита: перенос человека между бригадами сохраняется атомарно с причиной и версией. Занятые/отключённые новые участники недоступны, показана причина пересечения; сохранённый отключённый участник может остаться только в исходной бригаде. Backend повторно проверяет правила и пересечения. Снимки выполненных работ сохраняются.
+- Skills под DELIVERY VIEWS: динамический каталог и вкладка Participant skills. Admin создаёт/редактирует/отключает навыки и назначает их участникам; operator читает. Навыки также редактируются вместе с полным профилем, а требования выбираются в task template. Каждый фактический участник назначения должен иметь все требуемые навыки; учитывается выбранный состав визита, включая overrides.
+- Vehicles ниже Skills: динамический каталог физических company/external машин и отдельные транспортные назначения каждого визита. Admin управляет каталогом; admin/operator проверяют доступность, добавляют, заменяют и отменяют транспорт с сохранением истории.
+- Проблемы и решения, заметки, запросы повторного визита, связанные фото, связь запроса с новым визитом; статус planned не выдается за resolved.
+- Приватные документы/фото, загрузки PDF/PNG/JPEG/plain text до 5 MiB; download через delivery-scoped authenticated URL. Неготовые/повреждённые файлы помечаются недоступными. Тип, содержимое, размер и связи независимо проверяет backend. Повтор одинаковой загрузки использует стабильный requestId.
+- Прочитанные результаты crew, DEMO-подписи/отказы, отдельные версии исправлений, неизменяемые снимки source/instructions/assignments, история, явная проверяемая команда завершения и переоткрытие с причиной.
+- Loading/empty/error/retry, сообщения о правах, stale version/conflict, source review и причины запрета закрытия. Известные HTTP-ответы проверяются Zod перед подтверждением успеха.
+- Geist Sans/Mono из локального npm-пакета, Tailwind 4, локальные shadcn-style примитивы, Radix dialog, light/dark/system. Решения: `docs/design-system.md`.
+
+Экрана бригады, мобильного клиента, рисования подписи или публичного endpoint для подмены crew/customer нет. Результаты поступают через авторизованные учебные backend-сценарии, которые применяют общие доменные правила.
+
+## Черновики рейсов
+
+Откройте [Routes](http://127.0.0.1:3000/?section=routes) после входа. Создайте черновик, укажите время выезда по Риму, склады отправления и возврата и при необходимости выберите бригаду и машину. Добавьте адреса из **Nearby work**. В строках остатков отдельно показаны доставка, сборка и забор с исходным заказом.
+
+Меняйте порядок остановок кнопками **Move up** и **Move down** и задавайте длительность работ в минутах. **Route timeline** пересчитывает прибытие, начало и конец работы, ожидание и возврат. Для учебных адресов время в пути берётся из учебной матрицы. Для остальных участков можно ввести время вручную. Сохранение черновика не создаёт бронирований визитов, бригад и машин.
+
+С подключённым Google Maps карта показывает склады, нумерованные остановки и линию маршрута по дорогам. Если у остановки отсутствует точка, укажите широту и долготу в **Stop coordinates**. Пин сохраняется в черновике и требует уточнения после изменения адреса. В графике каждый переезд помечен источником оценки. Ручное время переезда переопределяет оценку Google. Инструкция подключения находится в [README backend](../backoffice-backend/README.md#google-maps-на-локальном-стенде).
+
+Чтобы сохранить въезд для следующих визитов, откройте **Review unloading entrance** на остановке в **Routes** или в **Delivery details → Overview**. Проверьте предложенный ориентир. Укажите независимо проверенный въезд на карте или введите координаты, подтвердите выбор и сохраните. В Routes подтверждённая точка имеет приоритет над координатами черновика. Изменение въезда обновляет маршрут с сохранением введённых полей.
+
+Данные для проверки на двух синтетических Picking и ожидаемые значения описаны в [сценарии MVP](../backoffice-backend/docs/mvp-pilot.md#черновик-многоадресного-рейса).
+
+## Vehicles и несколько заказов — 2026-11-04
+
+Открыть [Vehicles](http://127.0.0.1:3000/?section=vehicles) после входа в backoffice. В навигации раздел расположен непосредственно под Skills. Каталог поддерживает поиск, фильтры ownership/status, создание и редактирование admin; operator видит данные без редактора. Физическая машина имеет название, plate, company/external, operational status, Enabled и заметки. Для external обязателен provider name; контакт необязателен. Plate приводится к верхнему регистру с удалением крайних пробелов, внутренние пробелы и дефисы сохраняются. Permanent crew–vehicle binding отсутствует.
+
+1. Открыть delivery → Visits & tasks, забронировать визит и назначить фактические crews/participants/tasks.
+2. Нажать **+ Allocate vehicle** у нужного визита. Reserved from / Reserved until по умолчанию совпадают с визитом и используют общий Rome date-time picker; окно можно расширить для погрузки, дороги и возвращения. **Check availability** проверяет именно выбранное окно. После изменения времени перед сохранением требуется повторная проверка.
+3. Выбрать доступную физическую машину и, при необходимости, participant driver или external driver с именем/телефоном. Participant driver может быть вне состава бригады; участник этой же бригады тоже может вести машину. Имя external driver не является проверенной глобальной идентичностью: его доступность подтверждается вручную.
+4. При необходимости добавить другие машины. Для поломки использовать **Replace**, для освобождения брони — **Cancel**; обе команды требуют причину. Старые записи, авторы, времена и причины остаются в истории. Повторный визит имеет собственный транспорт и может использовать другую бригаду и машину.
+
+Окно резервирования должно покрывать весь визит, иметь положительную длительность и не превышать 45 дней. Занятая/отключённая машина, maintenance/out of service и занятый/отключённый participant driver недоступны с текстом причины и интервалом пересечения. Одна физическая машина не может иметь два активных назначения этому визиту; один participant driver не может вести две его активные машины. Участник, одновременно входящий в бригаду и являющийся водителем этого визита, не конфликтует сам с собой; транспортное окно расширяет его занятость. Backend независимо проверяет ресурсы, версию и requestId.
+
+Транспорт меняется только у unstarted booked-визита открытой доставки; старые транспортные назначения можно заменить/отменить даже если у визита сейчас нет crews. Для переноса времени сначала явно отменить активный транспорт, затем reschedule и заново allocate. Окончание работы у клиента не освобождает машину или participant driver до конца reserved return window. Disabling/maintenance не отменяют существующие брони автоматически: Refresh карточки delivery показывает предупреждение о текущем состоянии машины, сохраняя записанное название и историю. Новые execution results содержат транспорт, зафиксированный на момент выполнения; legacy-results без этого поля остаются без выдуманного транспорта.
+
+Refresh vehicles сохраняет фильтры, таблицу и открытый черновик. Refresh delivery/availability сохраняет окно, выбранную машину, водителя, причину, вкладку и прокрутку; поздние ответы не заменяют актуальные. Редактор каталога сохраняет исходную version и показывает 409 без потери ввода. Транспортная форма использует guard версии доставки и явное **Use latest data**; повтор одинаковой команды при неизвестном результате сохраняет requestId. Изменение данных запроса получает новый requestId.
+
+Одна delivery соответствует picking, который может содержать несколько коммерческих заказов. Все доступные sales orders показаны в списке и карточке, а product lines, issue choices и file choices показывают свой заказ. Новые импорты передают полный `salesOrders` и `items[].saleOrderId`; старые сохранённые данные используют legacy primary reference, а неизвестная принадлежность строки обозначается явно. Исторические результаты читают записанный source, а не обновлённый каталог. Коммерческие заказы не создаются и Odoo не изменяется. Подробные доменные/API-правила: [backend vehicles.md](../backoffice-backend/docs/vehicles.md) и [source-model.md](../backoffice-backend/docs/source-model.md).
+
+Проверено на этом этапе: frontend `npm run typecheck`, полный `npm run lint`, **73/73 tests** и production `npm run build` прошли; production frontend пересобран и перезапущен основным агентом. Одиннадцать новых DOM/contract-регрессий покрывают каталог и роли, provider/plate, captured version, requestId retry, занятые ресурсы, независимого водителя, ручное окно/45 дней, замену/отмену, unstaffed-визит, maintenance warning с сохранением черновика и несколько заказов. HTTP в компонентных тестах заменён fixtures. После rollout read-only API smoke — **1/1 PASS**. В браузере реально созданы внешняя машина и визит picking 20, назначены crew, машина и водитель; отмечена учебная поломка и сохранена замена с причиной. Проверены Refresh, форма и таблица на 320 px. [Каталог](docs/screenshots/vehicles-catalog.jpg), [история замены](docs/screenshots/visit-transport-replacement.jpg). Подробные наблюдения — в design-system.
+
+## Skills: рабочий поток
+
+1. Открыть Skills под DELIVERY VIEWS. На вкладке Skills admin использует New skill или Edit skill: имя, необязательное описание, Enabled. Каталог загружается из HTTP API; новые навыки не требуют изменения frontend-кода. Поиск, статус и число участников помогают найти нужную запись.
+2. На Participant skills найти человека и нажать Edit skills. Все выбранные навыки сохраняются одной версионированной командой, которая изменяет только навыки участника. Такой же выбор доступен в полной форме Participants. Отключённые существующие связи можно сохранить или удалить; новый выбор отключённого навыка недоступен.
+3. В Task templates выбрать Required skills for every participant и сохранить шаблон одной командой. Все выбранные требования обязательны для каждого участника, которому назначены эти задачи.
+4. В назначении визита выбрать crews и задачи, затем фактических участников. Задачи остаются выбираемыми, чтобы можно было заменить неподходящий стандартный состав. Неподходящие новые участники недоступны с текстом Missing skills и именами требований. Уже выбранный конфликтующий участник остаётся в форме и доступен для удаления; Save блокируется до исправления состава. Навыки нескольких людей не складываются в общую квалификацию.
+
+Те же проверки действуют при изменении состава booked-визита через Visit staffing. Здесь требования читаются из записанных задач визита, а навыки участников и Enabled — из текущего каталога. Отключённый требуемый навык блокирует новое назначение и изменение planned staffing. Start, execution и reschedule не переоценивают задним числом уже записанный состав.
+
+Refresh skills сохраняет вкладку, поиск, статус, таблицу, открытый editor, прокрутку и ввод. Редактор сохраняет исходную версию записи; изменение на сервере не превращает старый черновик в новую версию автоматически. Конфликт 409 виден в форме. Refresh карточки визита и availability повторно получает актуальные навыки людей, сохраняя выбранных участников для проверки и удаления.
+
+Новые назначения сохраняют имена требований и навыки участников в снимках. Исторические badges требований читаются только из `requiredSkillsSnapshot`; переименование каталога не переписывает старые задачи. У legacy-задач без этого поля требования считаются отсутствующими. Public profile календаря участника по-прежнему не содержит `skillIds`, login или hasPassword.
+
+Проверено 2026-11-04: frontend typecheck, полный typed lint, **62/62 tests** и production build прошли; production frontend перезапущен. Одиннадцать новых тестов проверяют CRUD/роли/версию/Refresh, профиль и narrow skill update, требования шаблонов, квалификацию каждого человека, реальные overrides выбранного состава, disabled skills и исторические названия. Обновлённый read-only API smoke прошёл **1/1** с Docker backend; его typecheck/lint/build и **95/95 tests** также прошли. Миграция skills в main/test применена после новой Docker backup и независимой проверки сохранности прежних данных и истории.
+
+В браузере на desktop подтверждены расположение Skills под DELIVERY VIEWS, загрузка каталога и реальное создание седьмого навыка `Heavy lifting`. Через Participant skills для Antonio сохранены и повторно прочитаны те же два навыка — подъём грузов и товарная проверка. Refresh сохранил Participant skills, поиск Antonio и статус Enabled. Пример с шестью навыками Simone и требованием навыка сборки мебели для Assemble подготовлен явными API-командами; существующие визиты не изменялись.
+
+Финальная mobile-проверка: viewport и document ровно 320 CSS px; Skills видим и доступен через горизонтальную прокрутку sidebar. У таблицы участников client/scroll width 278/700 px, overflow остаётся внутри неё. У dialog — 293/293 px, у fieldsets — 237/237 px. Реальный Refresh до/после сохранил page Y=0, table scrollLeft=376.7999878, поиск Antonio, status=enabled и вкладку Participant skills.
+
+После проверки восстановлен стандартный viewport 1280×720, document width 1280 px. В Light визуально проверены белая поверхность `rgb(255, 255, 255)` и текст `rgb(23, 23, 23)`; затем выбран System, восстановивший Dark. Это наблюдение о темах, без заявления о проверке всех токенов или полном соответствии контраста. Console warnings/errors: `[]`. Сохранён [скриншот Participant skills](docs/screenshots/participant-skills.jpg): desktop, Skills под DELIVERY VIEWS, фильтр Simone и шесть badges.
+
+Новые bookings для skills QA в браузере не создавались. На момент проверки operational appointments были cancelled, кроме completed. Правила назначения проверены в backend suite (**95/95**, включая настоящие HTTP/PostgreSQL-проверки) и frontend suite (**62/62**, включая UI-регрессии); новый live-browser booking в эту область доказательств не входит.
+
+## Проверки
+
+```powershell
+# Не выполнять build/verify поверх работающего frontend server.
+npm run typecheck
+npm run lint
+npm test
+npm run build
+
+# После запуска backend, импорта 20 pickings и demo-сценария:
+npm run test:api
+```
+
+`typecheck` и `build` удаляют только собственные сгенерированные `.next/dev/types` при остановленном dev-сервере и создают свежие route types. Это устраняет дубли `LayoutProps` от одновременно оставшихся dev/build-кэшей Next 16. Исходники, тесты и scripts остаются под строгой проверкой, `skipLibCheck: false`; проверки не отключены.
+
+`npm test` проверяет полные и мигрированные профили, admin/operator UI, отсутствие предзаполненного пароля, выбор roster по ID, overrides начального назначения, атомарный перенос людей, занятость/отключённых участников, сохранение staffing-черновика и защиту версии, а также Rome/DST, обязательный offset, границы недели, соседние/пересекающиеся визиты и 23/25-часовую раскладку. `npm run test:api` читает локальные demo credentials внутри процесса без печати, получает настоящую сессию и проверяет клиентские контракты всех 20 доставок, завершённые результаты/подписи, справочники, импорт, календарь и приватные скачивания, включая 401/404. Он повторно сохраняет текущие инструкции одного открытого picking, не меняя их значения, и оставляет честный operator audit. Для проверки только чтения бизнес-данных:
+
+```powershell
+$env:BACKOFFICE_READONLY_SMOKE='1'
+npm run test:api
+Remove-Item Env:BACKOFFICE_READONLY_SMOKE
+```
+
+Путь к файлу аккаунтов можно переопределить через `BACKOFFICE_DEMO_ACCOUNTS`. Тест создаёт и завершает собственную session-cookie; её не печатает.
+
+Все кнопки Refresh/Retry обновляют данные в фоне. Загруженные таблицы, календарь, панели, выбранные вкладки, раскрытые блоки, прокрутка и ввод не пересоздаются на время запроса. При ошибке прежние данные остаются видимыми; отменённый или запоздавший ответ не заменяет более свежий результат. Если версия записи изменилась, черновик сохраняется и не может затереть новые данные: только отдельное действие «Use latest data» сбрасывает конкретную форму после проверки оператором. Повтор сохранения при неизвестном результате сохраняет request ID, а явный новый черновик получает новый ID.
+
+`npm test` дополнительно выполняет 7 DOM-регрессий Refresh через jsdom + React `act` на реальных компонентах: сохранность DOM/форм/прокрутки, ошибки, гонки запросов и повторная отправка. Добавлены 9 проверок профилей, обычных составов, недоступных сотрудников, первоначального назначения и атомарного переноса, а затем 9 unit/component-проверок выбора даты/времени: winter/summer, DST gap/fold, независимость от системной зоны и точность reschedule. HTTP в компонентных тестах заменён проверенными fixtures; они не заменяют проверки реальной API-авторизации. На этапе date-time picker **31/31 frontend-тестов**, typecheck, typed lint и optimized build прошли через `npm run verify`.
+
+Проверки API не заменяют браузерную проверку. После пересборки и перезапуска production frontend в авторизованном браузере проверены все пять Refresh: доставки, календарь, справочник, карточка доставки и история импорта. Сохранились страница списка, вкладки, фильтры, раскрытые блоки, выбранный файл, введённые поля и прокрутка. Crews теперь показаны компактной таблицей Geist; при 320 px её горизонтальная прокрутка сохраняется. Тестовые черновики не отправлялись. Ошибки и гонки HTTP дополнительно проверены компонентными тестами. Подробные наблюдения и границы проверки — в `docs/design-system.md`. Реальная клиентская Odoo и production deployment не проверялись.
+
+На 2026-11-03 `npm audit --omit=dev` показывает 0 vulnerabilities. Полный аудит выявляет цепочку dev advisories в minimatch/ESLint и esbuild; автоматические `audit fix`/downgrade не запускались. ESLint 9.39.5 выбран по совместимости с включёнными в eslint-config-next plugins, которые ещё не объявляют поддержку ESLint 10; npm помечает ESLint 9 deprecated. Node 26 также выводит предупреждение DEP0205 от tsx при проверках. Эти ограничения инструментов не скрыты подавлениями.
+
+После нормализации сотрудников полный `npm run verify` прошёл: typecheck, typed lint, 22 теста и optimized build. Live read-only API smoke проверяет также профили, ссылки обычных составов на реальные person IDs и доступность записанного визита. В авторизованном браузере создан явно вымышленный `DEMO Flex Worker` с контактными полями и без логина; проверены назначение вне обычного состава, перенос между бригадами одним сохранением, блокировка занятого человека с указанием интервала и работа в следующей непересекающейся смене. Учебный пример оставлен на 10 ноября 2026: `DEMO/OUT/0002` 09:00–11:00, `DEMO/OUT/0003` 11:00–13:00 Europe/Rome. Это два настоящих локальных booking и audit-записи, доступные для дальнейшей проверки; существующие назначения не заменялись. Снимок: [visit-staffing.jpg](docs/screenshots/visit-staffing.jpg). У учебного сотрудника логин и пароль не заданы; интерфейсы frontoffice не создавались.
+
+Нативный date-time picker проверен в авторизованном браузере: для `DEMO/OUT/0004` создан визит на 13 ноября 2026, 09:30–11:00 Europe/Rome, затем отменён с причиной `DEMO date-time picker verification completed; temporary booking cancelled`. Временный booking не оставил дополнительного активного визита; создание и отмена сохранены в audit. Refresh сохраняет введённые дату/время и прокрутку. Снимок: [appointment-date-time.jpg](docs/screenshots/appointment-date-time.jpg). Backend для этого изменения не менялся; полный прогон на этом этапе — **69/69 тестов**.
+
+## Географические фильтры Inbox
+
+В Inbox to plan доступны зависимые фильтры City → Province → Postal code (CAP). Города охватывают весь Inbox, провинции — выбранный город, индексы — выбранные город и провинцию, включая все страницы. При смене города очищаются провинция и индекс, при смене провинции — индекс. Пока ответ для нового выбора не получен, устаревшие дочерние варианты недоступны. «Not provided» находит записи без значения. Clear filters возвращает полный список и первую страницу. Refresh сохраняет фильтры и открытую карточку, а переход в другие delivery views не передаёт скрытые критерии Inbox. Таблица и карта используют одинаковый запрос; фильтрация выполняется на backend до пагинации.
+
+Автоподстановка работает в обе стороны: можно начать с City, Province или Postal code. После явного выбора остальные пустые поля заполняются, только если по всем подходящим доставкам есть одно известное значение. Например, CT подставляет Catania, а 95121 — Catania и CT. Если вариантов несколько, нужен ручной выбор; «Not provided» не подставляется автоматически. Clear filters, ручное «All» и обычный Refresh не запускают повторный автовыбор. Выбор Catania сам подставляет CT, а CAP остаётся ручным, поскольку доступны два индекса. Данные для вывода приходят в `matchingGeographyFacets` отдельно от вариантов выпадающих списков; текущая страница таблицы не используется как источник связей.
+
+Город берётся из импортированного снимка. Учебные провинция и индекс хранятся отдельно и действуют только для того же клиента и адреса. Google API не используется. Заполнение, ограничения и ожидаемые результаты: [geography-demo.md](../backoffice-backend/docs/geography-demo.md). Автоматические проверки: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`; новая регрессия — `test/inbox-geography.test.ts`.
+
+## Карта Inbox
+
+Переключатель **List / Map** использует те же фильтры города, провинции и индекса. Карта запрашивает все подходящие доставки через `GET /deliveries/map`, независимо от пагинации таблицы. Одиночная точка открывает существующую карточку с Nearby work. Точка с числом раскрывает несколько доставок по одним координатам. Записи без координат показаны отдельно; их карточки тоже доступны.
+
+Для локального демо используется Leaflet 1.9.4 и подложка OpenStreetMap без Google API и ключей. Подложке нужен интернет; данные доставок берутся из backend. Учебные координаты не являются геокодированными адресами. Подтверждённый въезд имеет приоритет над учебной точкой. Refresh и переключение List / Map сохраняют масштаб и положение; смена фильтров показывает все соответствующие точки. **Show all points** возвращает охват результатов. Ошибка загрузки подложки не блокирует список доставок под картой.
+
+Тайлы загружаются только при открытии карты, с атрибуцией и обычным браузерным кэшем, без предзагрузки регионов. Публичный сервер OSM предназначен для такого небольшого интерактивного демо; перед ростом нагрузки нужно выбрать подходящего поставщика или собственный сервер по [правилам OSM](https://operations.osmfoundation.org/policies/tiles/). Дорожные маршруты и ETA эта карта не рассчитывает.
+
+Проверки входят в `npm test`: `inbox-map.test.ts` проверяет запросы/фильтры и карточку; `inbox-map-canvas.test.ts` использует настоящий Leaflet в jsdom для выбора точек, совпадений, клавиатуры, Refresh, ошибок тайлов и очистки. Они дополняют браузерную проверку, записанную в [design-system.md](docs/design-system.md).
+
+## Календарь участника
+
+Имя в Participants открывает отдельную read-only страницу `/participants/[id]/calendar` для backoffice-ролей admin/operator. Календарь показывает даты, начало и конец визита, picking/клиента, статус, фактическую бригаду и сохранённые задачи/checklist участника. Данные приходят через `GET /api/participants/:id/calendar?from=<ISO>&to=<ISO>` и выбираются по UUID в фактическом assignment, не по обычному составу бригады или имени. Completed/cancelled записи доступны для истории, повторный визит отмечен отдельно. Задачи бригады имеют общий интервал визита; отдельное время задач не назначается.
+
+Проекция не содержит login/hasPassword, результатов, подписей или файлов. Новые таблицы и миграции не нужны; frontoffice не создаётся. Backend этой функции прошёл **76/76 тестов**, typecheck, typed lint, build и OpenAPI. [Календарь участника](docs/screenshots/participant-calendar.jpg).
+
+Финальный повторный `npm run verify` прошёл: **38/38 frontend-тестов**, typecheck, typed lint и optimized build, включая динамический маршрут календаря. Семь новых компонентных проверок покрывают snapshots, Rome/DST и оба времени визита, Day/Week, cancelled/empty/error состояния, Refresh/гонки запросов, открытый delivery draft и runtime-валидацию. Live read-only `npm run test:api` с действующей сессией оператора и новым endpoint — **1/1 PASS**.
+
+В production-браузере ссылка Simone из Participants открыла реальный URL: 10 ноября показаны Catania Uno 09:00–11:00 и Assembly Studio 11:00–13:00, Check products; на карточках видны оба времени. Refresh сохранил дату, Day, cancelled preference и внутреннюю прокрутку. На 320 px переполнение остаётся внутри календаря. Open delivery открыл `DEMO/OUT/0002`; заметка пережила его Refresh и была закрыта без сохранения. Uppercase UUID сохранил правильного участника, Back to Participants вернул нужную вкладку. Бизнес-данные не менялись, viewport override сброшен, browser console без warnings/errors. Оба локальных production-сервера запущены; подробные измерения — в `docs/design-system.md`.
+
+## Month в календарях
+
+Общий календарь и календарь участника используют одну панель Day / Week / Month, Previous / Today / Next и выбор месяца. Month показывает полные 4/5/6 недель с понедельника по воскресенье, включая даты соседних месяцев. Переходы между месяцами ограничивают день последним существующим днём нового месяца; учитываются високосный февраль и Europe/Rome DST. Дата и «+ more» открывают Day, событие — карточку delivery. Refresh сохраняет смонтированную таблицу месяца, текущий режим/месяц, фильтры и прокрутку.
+
+API обоих календарей принимает до **45 дней**, покрывая шестинедельную сетку и лишний час осеннего DST; прежний лимит был 32 дня. Строгие ISO/offset и правила half-open пересечения сохраняются. Backend Month-проверки — **77/77**, typecheck, typed lint, build и OpenAPI PASS. Новых таблиц, миграций, frontoffice и зависимостей нет. Скриншоты: [Calendar Month](docs/screenshots/calendar-month.jpg), [Participant Month](docs/screenshots/participant-calendar-month.jpg).
+
+Финальный `npm run verify` для Month прошёл: **47/47 frontend-тестов**, typecheck, typed lint и optimized build. Live read-only `npm run test:api` с действующей operator-сессией и полными 42-дневными запросами обоих endpoints — **1/1 PASS**. Локальные production API/UI перезапущены.
+
+В браузере Month участника за ноябрь 2026 содержит 42 даты 26 октября–6 декабря, отмечает today 3 ноября и показывает Catania Uno 09:00–11:00 / Assembly Studio 11:00–13:00 на 10 ноября. Проверены Previous / Next, дата→Day, Refresh и сохранение режима/месяца/cancelled preference/прокрутки. Общий Month показал шесть реальных событий, включая completed, поддержал Next / Today и открытие `DEMO/OUT/0002`; Refresh сохранил таблицу, ноябрь и прокрутку страницы. На 320 px оба календаря сохраняют переполнение внутри своей области. Итоговые console без warnings/errors, бизнес-данные не менялись; viewport overrides сняты, итоговая страница участника открыта в обычной вкладке 1280 px. Оба скриншота сохранены; точные измерения — в `docs/design-system.md`.
+
+## Один default roster
+
+Новое уточнение пользователя заменяет прежнее допущение о нескольких обычных составах: один person UUID имеет 0..1 default crew глобально, включая disabled crews. В admin-редакторе Crews участники других бригад показаны серыми, под именем указана занятая бригада. Собственного участника можно оставить или снять. Если после Refresh выбранный draft конфликтует с другой бригадой, его можно снять, но Save заблокирован до устранения конфликта. Backend независимо возвращает 409 с person/crew name и защищает правило транзакцией и PostgreSQL UNIQUE.
+
+Это правило относится к default roster; visit staffing по-прежнему позволяет выбрать доступного участника для другой бригады на другом визите, сохраняя snapshots. Пользователь выбрал оставить Antonio в Messina Due, Alessandro в Catania Uno и Andrea в Catania Due. Один admin PATCH убрал только их дубли из Assembly Studio (v10→11, теперь пустой обычный состав); остальные бригады сохранены. Guarded-миграция применена к основной и тестовой базе после backup; подробности — в backend `docs/people-and-staffing.md`.
+
+Текущие проверки: frontend **51/51**, typecheck, typed lint и build — PASS; backend **80/80**, typecheck, typed lint, build/OpenAPI — PASS; live read-only API smoke **1/1 PASS**. Новые таблицы, зависимости и frontoffice не добавлены.
+
+В свежем production-браузере проверены Assembly Studio 0 и остальные пять бригад по 3 участника. New crew показывает Alessandro / Andrea / Antonio недоступными с причиной Already in Catania Uno / Catania Due / Messina Due, свободного Simone можно отметить и снять. В Catania Uno собственный Alessandro отмечен и доступен для снятия/возврата; Save остаётся доступен. Другие занятые участники заблокированы. Проверочные изменения не сохранялись. На 320 px редактор не переполняет свою область; viewport override снят, console без warnings/errors. Повторный backend-прогон после миграции тестовой базы — **80/80**, повторный read-only smoke после перезапуска сервисов — **1/1 PASS**. [Скриншот редактора](docs/screenshots/crew-membership.jpg); точные размеры — в design-system.
+
+
+## Delivery list and geographic area (2026-11-09)
+
+Visit booking and staffing filters (2026-11-10): [behavior, validation and launch commands](docs/visit-planning-ui.md).
+
+Participants, Crews and Task templates CRUD: [permissions, deletion rules and checks](docs/directory-crud.md).
+
+All record tables use shared pagination with 10 rows per page: [scope, Refresh behavior and checks](docs/table-pagination.md).
+
+Inbox and the other delivery tables show operational status, active crews/visit dates and provisional remaining work. On Inbox Map, **Use visible area** applies the visible rectangle to both List/Map; **Clear area** preserves City/Province/CAP. Details and browser evidence are in [design-system.md](docs/design-system.md#delivery-list-planning-summary-and-geographic-area--2026-11-09).
+
+Run `npm run typecheck`, `npm run lint`, `npm test` and `npm run build` for local checks. With the Docker API running and the existing local demo manifest available, run the read-only live check: `node --import tsx --test test/section-two.smoke.ts`. Start the built frontend with `npm start` at http://127.0.0.1:3000. No Google API is used by the area filter.
+
+## Product problems, documents and route feasibility (2026-11-11)
+
+Issues & returns now links Crew product problems to exact order lines and requires an operator explanation to release damaged remaining work. History preserves the report's instruction/drawing version; Files can add a new immutable version. See [readiness rules and the completed Chrome demo](../backoffice-backend/docs/product-issues-readiness.md). `DEMO/FOLLOWUP/0001` contains two orders sharing a SKU, distinct line photos/reasons, synthetic signatures and an explicitly released damage hold. Its Issue remains open and its signed report still references instruction v2 after v3 was uploaded.
+
+Routes checks the selected remaining work, customer window meaning, actual participants, driver, vehicle, date-specific working intervals and breaks through the return journey. Missing information is shown explicitly. Stop-order suggestions compare the same approximate travel basis and require Apply; Undo restores the previous order. They do not publish or book a route. See [constraints, demo and checks](../backoffice-backend/docs/route-feasibility.md). `DEMO · Catania route feasibility` compares 18 versus 15 travel minutes and 10:53 versus 10:50 return, without Google API.
+
+Typecheck, typed lint and production build passed. The complete frontend suite passed 186 tests; five subsequently added readiness/resource regressions also passed. Chrome verified report/history, readiness release, document replacement, and route proposal/apply/undo. Physical-phone acceptance remains unverified: computer control stopped when it could not reliably determine Chrome's active URL. This is local verification, not customer acceptance.
+
+Run the existing Docker backend first, then `npm run build` and `npm start` in this project. Crew runs independently at http://127.0.0.1:3002; launch instructions remain in its README. Refresh keeps current form drafts while updating data. Screenshot: [product checks in History](docs/screenshots/operations-followup-history-20261111.png).

@@ -1,0 +1,463 @@
+@import "tailwindcss";
+@import "../components/inbox-map-canvas.css";
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #ffffff; --background-subtle: #fafafa; --foreground: #171717;
+  --card: #ffffff; --card-foreground: #171717; --popover: #ffffff; --popover-foreground: #171717;
+  --primary: #171717; --primary-foreground: #ffffff; --secondary: #f5f5f5; --secondary-foreground: #404040;
+  --muted: #f5f5f5; --muted-foreground: #666666; --accent: #f0f0f0; --accent-foreground: #171717;
+  --border: #e5e5e5; --input: #d4d4d4; --ring: #0070f3; --destructive: #bc2b24;
+  --success: #e7f8ed; --success-foreground: #19753a; --warning: #fff4d6; --warning-foreground: #8a4b0d;
+  --danger: #ffeded; --radius: 0.5rem; --sidebar-width: 248px;
+  --info: #edf5ff; --info-foreground: #005bb5;
+  --scrollbar-thumb: #8a8a8a; --scrollbar-thumb-hover: #666666; --scrollbar-thumb-active: #404040;
+}
+.dark {
+  --background: #0a0a0a; --background-subtle: #111111; --foreground: #ededed;
+  --card: #0a0a0a; --card-foreground: #ededed; --popover: #171717; --popover-foreground: #ededed;
+  --primary: #ededed; --primary-foreground: #0a0a0a; --secondary: #1a1a1a; --secondary-foreground: #d4d4d4;
+  --muted: #1a1a1a; --muted-foreground: #a3a3a3; --accent: #242424; --accent-foreground: #ededed;
+  --border: #2a2a2a; --input: #404040; --ring: #3291ff; --destructive: #ff7870;
+  --success: #102418; --success-foreground: #62c885; --warning: #2b2110; --warning-foreground: #edbb68;
+  --danger: #2d1515;
+  --info: #10243a; --info-foreground: #78baff;
+  --scrollbar-thumb: #707070; --scrollbar-thumb-hover: #a3a3a3; --scrollbar-thumb-active: #d4d4d4;
+  color-scheme: dark;
+}
+@theme inline {
+  --color-background: var(--background); --color-foreground: var(--foreground);
+  --color-card: var(--card); --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover); --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary); --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary); --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted); --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent); --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border); --color-input: var(--input); --color-ring: var(--ring);
+  --color-destructive: var(--destructive); --font-sans: var(--font-geist-sans); --font-mono: var(--font-geist-mono);
+  --color-info: var(--info); --color-info-foreground: var(--info-foreground);
+  --color-warning: var(--warning); --color-warning-foreground: var(--warning-foreground);
+}
+@layer base {
+  * { @apply box-border border-border; }
+  body { @apply m-0 bg-background font-sans text-sm leading-relaxed text-foreground antialiased; }
+  button, input, select, textarea { font: inherit; touch-action: manipulation; }
+  button { @apply cursor-pointer; }
+  button:disabled { @apply cursor-not-allowed opacity-45; }
+  button:focus-visible, a:focus-visible { @apply outline-2 outline-offset-4 outline-ring; }
+  a { @apply text-inherit; }
+  h1, h2, h3, h4, p { @apply m-0; }
+  h1 { @apply text-3xl leading-tight font-semibold tracking-tight; }
+  h2 { @apply text-xl font-semibold tracking-tight; }
+  h3 { @apply text-base font-semibold tracking-tight; }
+  h4 { @apply text-sm font-semibold; }
+  p + p { @apply mt-1.5; }
+  table { @apply w-full border-collapse text-left text-xs; }
+  th { @apply bg-muted/60 text-[10px] font-medium tracking-wide text-muted-foreground uppercase; }
+  td, th { @apply border-b border-border px-5 py-4 align-middle; }
+  tbody tr:last-child td { @apply border-b-0; }
+  td strong { @apply font-medium; }
+  pre { @apply max-h-60 overflow-auto rounded-md bg-muted p-3 font-mono text-[11px] break-words whitespace-pre-wrap; }
+  details { @apply text-xs; }
+  summary { @apply cursor-pointer py-2 font-medium text-foreground; }
+  fieldset { @apply m-0 min-w-0 border-0 p-0; }
+  input, select, textarea { @apply min-w-0 rounded-md border border-input bg-background px-3 py-2.5 text-foreground outline-none; }
+  input:focus, select:focus, textarea:focus { @apply border-ring ring-2 ring-ring/25; }
+  input::placeholder { @apply text-muted-foreground; }
+  textarea { @apply w-full resize-y; }
+  select { @apply w-full; }
+  input[type=checkbox] { @apply m-0 h-4 w-4 shrink-0 accent-primary; }
+}
+/* Native scrollbar geometry is a CSS exception to the Tailwind component styles.
+   Keep forced-colors scrollbars entirely under the browser/OS accessibility policy. */
+@media (forced-colors: none) {
+  @supports selector(::-webkit-scrollbar) {
+    * { scrollbar-width: auto; scrollbar-color: auto; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      min-width: 32px;
+      min-height: 32px;
+      border: 2px solid transparent;
+      border-radius: 999px;
+      background: var(--scrollbar-thumb);
+      background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-thumb:hover { background-color: var(--scrollbar-thumb-hover); }
+    ::-webkit-scrollbar-thumb:active { background-color: var(--scrollbar-thumb-active); }
+  }
+  @supports not selector(::-webkit-scrollbar) {
+    * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+  }
+  /* Keep navigation scrollable without a visible scrollbar. */
+  .desktop-sidebar, .navigation-drawer { scrollbar-width: none; }
+  .desktop-sidebar::-webkit-scrollbar, .navigation-drawer::-webkit-scrollbar { display: none; width: 0; height: 0; }
+}
+@layer components {
+  .workspace { @apply flex min-h-screen; }
+  .sidebar { @apply fixed inset-y-0 left-0 z-10 flex flex-col overflow-y-auto border-r border-border bg-background px-4 pt-3; width: var(--sidebar-width); }
+  .sidebar-controls { @apply mb-3 flex justify-end; }
+  .navigation-drawer { @apply inset-y-0 left-0 flex h-dvh w-[min(320px,calc(100vw-32px))] flex-col overflow-y-auto border-y-0 border-l-0 p-4; }
+  .brand { @apply flex items-center gap-3 px-3 text-xl leading-tight font-semibold tracking-wide no-underline; }
+  .brand-mark { @apply grid h-9 w-9 shrink-0 place-items-center rounded-md bg-primary pb-1 text-3xl leading-none font-semibold text-primary-foreground; }
+  .brand-sub { @apply mt-1 block text-[8px] font-medium tracking-widest text-muted-foreground; }
+  .workspace-label { @apply mx-2 mt-7 mb-6 flex items-center gap-2 rounded-md border border-border bg-muted/40 p-2.5 text-[10px] text-muted-foreground; }
+  .status-dot { @apply inline-block h-1.5 w-1.5 shrink-0 rounded-full; background: var(--success-foreground); }
+  .nav-label { @apply mx-3 mb-3 text-[9px] font-medium tracking-widest text-muted-foreground; }
+  .spaced { @apply mt-7; }
+  .sidebar nav, .navigation-drawer nav { @apply flex shrink-0 flex-col gap-1; }
+  .nav-item, .view-nav { @apply flex min-h-9 w-full items-center gap-3 rounded-md border-0 bg-transparent px-3 py-2.5 text-left text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground; }
+  .nav-item > span:first-child { @apply w-5 text-base; }
+  .nav-item.selected, .view-nav.active { @apply bg-accent text-foreground; }
+  .nav-end { @apply ml-auto text-[10px] font-normal tabular-nums; }
+  .nav-item.selected .nav-end { @apply rounded bg-background px-1.5 py-0.5; }
+  .view-nav { @apply gap-2.5 py-2 text-[11px]; }
+  .view-nav > span:first-child { @apply w-4 text-sm; }
+  .sidebar-bottom { @apply mt-auto px-2 pt-7; }
+  .demo-stamp { @apply text-[8px] font-medium tracking-widest text-muted-foreground; }
+  .sidebar-bottom > p { @apply mt-2 text-[10px] leading-relaxed text-muted-foreground; }
+  .profile { @apply mt-5 flex items-center gap-2.5 border-t border-border py-5; }
+  .avatar, .person-avatar { @apply grid shrink-0 place-items-center rounded-full bg-muted text-muted-foreground; }
+  .avatar { @apply h-8 w-8 text-xs; }
+  .profile strong { @apply block text-[11px] font-medium; }
+  .profile small { @apply block text-[9px] text-muted-foreground; }
+  .profile button { @apply ml-auto grid h-8 w-8 place-items-center border-0 bg-transparent text-lg text-muted-foreground; }
+  .workspace[data-sidebar-collapsed="true"] { --sidebar-width:72px; }
+  .workspace[data-sidebar-collapsed="true"] .desktop-sidebar { @apply px-3; }
+  .workspace[data-sidebar-collapsed="true"] .sidebar-controls { @apply justify-center; }
+  .workspace[data-sidebar-collapsed="true"] .desktop-sidebar .brand { @apply mb-6 justify-center p-0; }
+  .workspace[data-sidebar-collapsed="true"] .desktop-sidebar :is(.brand-copy, .workspace-label, .nav-label, .nav-end, .demo-stamp, .sidebar-bottom > p, .profile-copy) { @apply hidden; }
+  .workspace[data-sidebar-collapsed="true"] .desktop-sidebar .nav-text { @apply sr-only; }
+  .workspace[data-sidebar-collapsed="true"] .desktop-sidebar :is(.nav-item, .view-nav) { @apply min-h-10 justify-center gap-0 px-0; }
+  .workspace[data-sidebar-collapsed="true"] .desktop-sidebar :is(.nav-item, .view-nav) > span:first-child { @apply w-auto text-lg; }
+  .workspace[data-sidebar-collapsed="true"] .desktop-sidebar nav + .nav-label + nav { @apply mt-4 border-t border-border pt-4; }
+  .workspace[data-sidebar-collapsed="true"] .sidebar-bottom { @apply px-0 pt-3; }
+  .workspace[data-sidebar-collapsed="true"] .profile { @apply flex-col; }
+  .workspace[data-sidebar-collapsed="true"] .profile button { @apply m-0; }
+  .main { @apply min-w-0 bg-background; margin-left:var(--sidebar-width); width:calc(100% - var(--sidebar-width)); }
+  .topbar { @apply flex min-h-[72px] flex-wrap items-center justify-between gap-3 border-b border-border px-9 py-3 text-xs; }
+  .topbar strong { @apply font-medium; }
+  .breadcrumb { @apply text-muted-foreground; }
+  .breadcrumb-divider { @apply mx-3 text-muted-foreground; }
+  .theme-control { @apply flex items-center justify-end gap-2 text-[11px] text-muted-foreground; }
+  .theme-control select { @apply h-8 w-auto min-w-24 py-1 text-[11px]; }
+  .appearance-controls { @apply flex flex-wrap items-start justify-end gap-3; }
+  .page-content { @apply mx-auto max-w-[1620px] px-9 pt-9; }
+  .page-heading { @apply mb-8 flex items-center justify-between gap-5; }
+  .eyebrow { @apply mb-2.5 text-[9px] font-medium tracking-widest text-muted-foreground; }
+  .subtitle { @apply mt-2.5 text-xs text-muted-foreground; }
+  .heading-count { @apply ml-3 inline-flex items-center justify-center rounded-md border border-border bg-muted px-2 py-1 align-middle text-xs font-medium tracking-normal text-muted-foreground tabular-nums; }
+  .button { @apply inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-primary bg-primary px-4 py-2 text-xs font-medium whitespace-nowrap text-primary-foreground no-underline transition-opacity hover:opacity-85 disabled:opacity-45; }
+  .button.secondary { @apply border-input bg-background text-foreground hover:bg-accent; }
+  .button.small { @apply min-h-8 px-3 py-1.5 text-[11px]; }
+  .button.full { @apply w-full; }
+  .icon-button { @apply inline-grid h-8 w-8 place-items-center rounded-md border border-border bg-background text-lg text-muted-foreground hover:bg-accent; }
+  .text-button { @apply min-h-6 border-0 bg-transparent py-1 text-left text-xs font-medium text-foreground hover:underline; }
+  .summary-strip { @apply mb-8 grid grid-cols-4 py-6; }
+  .summary-strip > div { @apply grid grid-cols-[auto_1fr] items-baseline gap-x-2 border-r border-border px-6 last:border-0; }
+  .metric-label { @apply col-span-full mb-1.5 text-[9px] font-medium tracking-wide text-muted-foreground; }
+  .summary-strip strong { @apply text-3xl font-medium tracking-tight tabular-nums; }
+  .summary-strip > div > span:last-child { @apply text-[10px] text-muted-foreground; }
+  .list-toolbar { @apply mb-4 flex items-center justify-between gap-4; }
+  .toolbar-title { @apply flex items-center gap-2 text-xs font-medium; }
+  .toolbar-title .muted { @apply ml-1 text-[10px] font-normal; }
+  .small { @apply text-[11px]; }
+  .muted { @apply text-muted-foreground; }
+  .mono { @apply font-mono; }
+  .table-wrap, .card { @apply overflow-x-auto rounded-lg border border-border bg-card; }
+  .delivery-table td { @apply py-5; }
+  .delivery-table tbody tr { @apply hover:bg-muted/40; }
+  .delivery-table .row-selected { @apply bg-accent; }
+  .reference { @apply min-h-6 border-0 bg-transparent p-0 text-left text-xs font-medium text-foreground hover:underline; }
+  .cell-sub { @apply mt-1 block text-[10px] font-normal text-muted-foreground; }
+  .badge { @apply inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] leading-relaxed font-medium whitespace-nowrap; }
+  .badge.success { background:var(--success); color:var(--success-foreground); }
+  .badge.warning { background:var(--warning); color:var(--warning-foreground); }
+  .badge.danger { @apply text-destructive; background:var(--danger); }
+  .badge.neutral { @apply bg-muted text-muted-foreground; }
+  .pagination { @apply mt-5 flex items-center justify-between text-[11px] text-muted-foreground; }
+  .pagination > div { @apply flex gap-2; }
+  .page-footer { @apply mt-12 flex justify-between border-t border-border py-5 text-[10px] text-muted-foreground; }
+  .notice { @apply my-3 rounded-md border border-border bg-muted/60 px-4 py-3 text-xs leading-relaxed break-words text-muted-foreground; }
+  .notice.error { @apply border-destructive/30 text-destructive; background:var(--danger); }
+  .notice.success { @apply border-emerald-500/25; color:var(--success-foreground); background:var(--success); }
+  .empty { @apply my-4 rounded-lg border border-dashed border-border bg-muted/30 px-5 py-12 text-center; }
+  .empty-icon { @apply mb-3 inline-grid h-10 w-10 place-items-center rounded-lg bg-muted text-xl text-muted-foreground; }
+  .empty h3 { @apply mb-2 text-base; }
+  .empty p { @apply text-xs text-muted-foreground; }
+  .pending { @apply flex items-center justify-center gap-2.5 p-6 text-xs text-muted-foreground; }
+  .spinner { @apply h-4 w-4 animate-spin rounded-full border-2 border-border border-t-foreground; }
+  .session-check { @apply grid min-h-screen place-items-center; }
+  .field { @apply my-4 block text-xs font-medium text-foreground; }
+  .field > span, .field > legend { @apply mb-1.5 block; }
+  .field small { @apply mt-1.5 block text-[10px] font-normal text-muted-foreground; }
+  .form-grid { @apply grid grid-cols-2 gap-x-4; }
+  .action-form { @apply mt-3; }
+  .form-actions { @apply mt-5 flex items-center gap-3; }
+  .checkbox-label { @apply my-2.5 flex items-center gap-2.5 text-xs font-normal text-foreground; }
+  .section-gap { @apply mt-8; }
+  .section-title { @apply mb-4 flex items-center justify-between gap-3; }
+  .inset-card { @apply rounded-lg border border-border bg-muted/30 p-5; }
+  .inset-card h3 { @apply mb-4; }
+  .booking-section { @apply mt-5; }
+  .booking-legend { @apply mb-3 flex items-center gap-2 text-sm font-semibold; }
+  .booking-legend > span { @apply flex size-6 items-center justify-center rounded-full border border-border bg-muted font-mono text-xs text-muted-foreground; }
+  .booking-purpose-grid { @apply grid grid-cols-1 gap-3 sm:grid-cols-2; }
+  .booking-purpose-option { @apply flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-background p-3 transition-colors; }
+  .booking-purpose-option:has(input:checked) { @apply border-info-foreground bg-info; }
+  .booking-purpose-option:focus-within { @apply outline-2 outline-offset-2 outline-ring; }
+  .booking-purpose-option[aria-disabled="true"] { @apply cursor-default bg-muted/30; }
+  .booking-purpose-option input { @apply mt-0.5 shrink-0; }
+  .booking-purpose-option strong { @apply block text-xs font-semibold; }
+  .booking-purpose-option small { @apply mt-1 block text-xs leading-relaxed text-muted-foreground; }
+  .booking-return-preview { @apply mt-3 space-y-2 rounded-lg border border-border bg-background p-4 text-sm; }
+  .booking-return-preview h4 { @apply text-xs font-semibold; }
+  .tabbar { @apply mb-6 flex items-center gap-6 border-b border-border; }
+  .tabbar button { @apply border-0 border-b-2 border-transparent bg-transparent py-3.5 text-xs font-medium text-muted-foreground; }
+  .tabbar button.active { @apply border-foreground text-foreground; }
+  .tabbar button span { @apply ml-1.5 inline-flex rounded bg-muted px-1.5 text-[10px] text-muted-foreground; }
+  .directory-filters { @apply mb-5 flex items-end gap-4; }
+  .directory-filters .field { @apply m-0 min-w-44; }
+  .directory-grid { @apply grid gap-5; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); }
+  .directory-card { @apply flex flex-col gap-2 rounded-lg border border-border bg-card p-6; }
+  .directory-card h2 { @apply text-lg; }
+  .directory-card > p { @apply text-xs; }
+  .card-topline { @apply flex items-center justify-between gap-4; }
+  .crew-symbol { @apply grid h-9 w-9 place-items-center rounded-md bg-muted text-2xl text-muted-foreground; }
+  .person-list, .template-checklist { @apply my-2 mb-3 grow list-none p-0; }
+  .person-list li { @apply my-2.5 flex items-center gap-2 text-xs text-foreground; }
+  .person-avatar { @apply h-6 w-6 text-[10px]; }
+  .person-list .badge { @apply ml-auto text-[9px]; }
+  .template-checklist li { @apply my-2.5 flex items-start gap-2.5 text-xs text-muted-foreground; }
+  .dialog-content.dialog { @apply top-1/2 left-1/2 max-h-[92vh] w-[92vw] max-w-[550px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl p-7; }
+  .dialog > p { @apply text-xs; }
+  .dialog-content.delivery-panel { @apply inset-y-0 right-0 flex h-full w-[min(890px,94vw)] flex-col border-r-0; }
+  .panel-header { @apply flex items-center justify-between gap-5 border-b border-border px-8 pt-6 pb-5; }
+  .panel-header .eyebrow { @apply mb-1 text-[9px]; }
+  .panel-header h2 { @apply text-2xl; }
+  .panel-header .muted { @apply text-xs; }
+  .panel-header-actions { @apply flex items-center gap-2.5; }
+  .panel-meta { @apply flex flex-wrap items-center gap-2 px-8 pt-4; }
+  .panel-meta > .muted { @apply ml-auto; }
+  .panel-tabs { @apply mb-0 shrink-0 gap-6 overflow-x-auto px-8; }
+  .panel-tabs button { @apply text-[11px] whitespace-nowrap; }
+  .panel-body { @apply grow overflow-y-auto px-8 pt-7 pb-10; }
+  .customer-card { @apply mb-6 flex items-center gap-4 rounded-lg border border-border bg-muted/30 p-5; }
+  .customer-avatar { @apply grid h-12 w-12 shrink-0 place-items-center rounded-full bg-muted text-xl font-medium text-foreground; }
+  .customer-card h2 { @apply mb-1 text-lg; }
+  .customer-card p { @apply text-xs text-muted-foreground; }
+  .detail-grid { @apply my-5 grid grid-cols-2 gap-5; }
+  .detail-grid dt { @apply mb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase; }
+  .detail-grid dd { @apply m-0 text-xs text-foreground; }
+  .source-note { @apply border-l-2 border-border bg-muted/50 p-3 text-xs text-muted-foreground; }
+  .product-row { @apply mt-3 flex items-center gap-4 rounded-lg border border-border p-4; }
+  .product-photo { @apply grid h-[72px] w-[72px] shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-muted; }
+  .product-photo > span { @apply text-[10px] text-muted-foreground; }
+  .product-photo img { @apply object-cover; }
+  .product-description { @apply grow; }
+  .product-description h4 { @apply text-sm; }
+  .product-description > p { @apply my-1 text-xs text-muted-foreground; }
+  .product-quantity { @apply shrink-0 text-right; }
+  .product-quantity strong { @apply font-mono text-xs; }
+  .visit-card { @apply my-5 rounded-lg border border-border p-6; }
+  .visit-card > .section-title h3 { @apply text-base; }
+  .visit-time { @apply mb-5 font-mono text-xs text-foreground; }
+  .visit-time span { @apply ml-2 text-[10px] text-muted-foreground; }
+  .assignment { @apply border-t border-border pt-5 pb-3; }
+  .assignment h4 { @apply flex items-center gap-3 text-sm; }
+  .assignment > p { @apply mt-1.5; }
+  .task { @apply mt-3 rounded-md border border-border p-3; }
+  .task strong { @apply text-xs; }
+  .task-checklist { @apply mt-2.5 list-none p-0; }
+  .task-checklist li { @apply mt-2 flex items-start gap-2 text-xs text-muted-foreground; }
+  .check { @apply mt-0.5 h-3.5 w-3.5 shrink-0 rounded-sm border border-input text-center text-[9px] leading-3; }
+  .check.done { color:var(--success-foreground); background:var(--success); }
+  .result-card { @apply my-4 rounded-md border border-border bg-muted/40 p-4 text-xs text-foreground; }
+  .result-card .detail-grid { @apply mb-2.5 gap-3; }
+  .visit-editor { @apply mt-5; }
+  .choice-list { @apply max-h-64 overflow-y-auto rounded-md border border-border bg-muted/20 px-3 py-1.5; }
+  .choice-list label { @apply flex-wrap gap-2 text-xs; }
+  .choice-list label > .muted { @apply ml-auto text-[10px]; }
+  .blocker-list { @apply my-4 list-disc space-y-1.5 pl-5 text-xs text-muted-foreground; }
+  .close-section { @apply mt-10 border-t border-border pt-7; }
+  .close-section > p { @apply text-xs text-muted-foreground; }
+  /* Delivery Details owns its surface hierarchy; directory and calendar cards
+     keep their existing presentation. */
+  .delivery-panel { --detail-surface: #ffffff; --detail-inset: #fafafa; }
+  .dark .delivery-panel { --detail-surface: #141414; --detail-inset: #1b1b1b; }
+  .delivery-panel .panel-header { @apply shrink-0; }
+  .panel-identity { @apply flex min-w-0 items-center gap-3; }
+  .detail-icon { @apply shrink-0; }
+  .detail-heading { @apply flex min-w-0 items-center gap-2.5; }
+  .detail-heading-icon { @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-transparent; }
+  .detail-heading-icon.info, .delivery-panel .badge.info { background: var(--info); color: var(--info-foreground); }
+  .detail-heading-icon.warning { background: var(--warning); color: var(--warning-foreground); }
+  .detail-heading-icon.success { background: var(--success); color: var(--success-foreground); }
+  .detail-heading-icon.neutral { @apply border-border bg-muted text-muted-foreground; }
+  .delivery-panel .panel-symbol { @apply h-11 w-11; }
+  .delivery-panel .panel-symbol .detail-icon { @apply h-6 w-6; }
+  .delivery-panel .panel-meta { @apply shrink-0 gap-1.5 pb-2; }
+  .delivery-panel .badge .detail-icon { @apply h-3 w-3; }
+  .delivery-panel .panel-tabs { @apply gap-3; }
+  .delivery-panel .panel-tabs button { @apply inline-flex min-h-12 items-center gap-1.5 rounded-t-md px-2 transition-colors; }
+  .delivery-panel .panel-tabs button .detail-icon { @apply h-3.5 w-3.5; }
+  .delivery-panel .panel-tabs button.active { @apply border-info-foreground bg-info text-info-foreground; }
+  .delivery-panel .panel-tabs button:focus-visible { @apply -outline-offset-4; }
+  .delivery-panel .panel-body { @apply min-h-0; background: var(--background-subtle); }
+  .delivery-panel .detail-section, .delivery-panel .visit-card, .delivery-panel .inset-card { @apply rounded-xl border border-border p-5 shadow-xs; background: var(--detail-surface); }
+  .delivery-panel .section-gap { @apply mt-5; }
+  .delivery-panel .section-title { @apply mb-4 flex-wrap; }
+  .delivery-panel .section-title > .badge { @apply ml-auto; }
+  .delivery-panel .detail-section .section-title h3 { @apply text-sm; }
+  .delivery-panel .customer-card { @apply mb-4 border-0 p-0; background: transparent; }
+  .delivery-panel .customer-avatar { @apply rounded-xl border border-border text-info-foreground; background: var(--info); }
+  .delivery-panel .detail-grid { @apply my-4 gap-0 overflow-hidden rounded-lg border border-border; }
+  .delivery-panel .detail-grid > div { @apply min-w-0 border-b border-border p-3 last:border-b-0; }
+  .delivery-panel .detail-grid dd { @apply break-words; }
+  .delivery-panel .source-note { @apply mt-4 rounded-md border-l-2 border-info-foreground; background: var(--info); color: var(--info-foreground); }
+  .delivery-panel .product-row { @apply gap-3; background: var(--detail-inset); }
+  .delivery-panel .product-description { @apply min-w-0 break-words; }
+  .delivery-panel .product-description h4 { @apply font-medium; }
+  .delivery-panel .product-photo { background: var(--detail-surface); }
+  .delivery-panel .visit-card { @apply my-4; }
+  .delivery-panel .visit-time { @apply flex flex-wrap items-center gap-2 rounded-lg px-3 py-2.5 text-[11px]; background: var(--info); }
+  .delivery-panel .visit-time > .detail-icon { @apply h-3.5 w-3.5 text-info-foreground; }
+  .delivery-panel .visit-time > span { @apply m-0; }
+  .delivery-panel .assignment { @apply mb-4 rounded-lg border border-border p-4; background: var(--detail-inset); }
+  .delivery-panel .assignment h4 { @apply gap-2; }
+  .delivery-panel .assignment .task { background: var(--detail-surface); }
+  .delivery-panel .task .card-topline { @apply flex-wrap gap-2; }
+  .delivery-panel .task .badge { @apply text-[9px]; }
+  .delivery-panel .scheduling-trigger { @apply mt-4 min-h-9 rounded-md border border-input bg-background px-3 py-2 no-underline transition-colors hover:bg-accent; }
+  .delivery-panel .scheduling-trigger[aria-expanded=true] { @apply border-info-foreground bg-info text-info-foreground; }
+  .delivery-panel .visit-editor { @apply rounded-lg border border-border p-4; background: var(--detail-inset); }
+  .delivery-panel .choice-list { @apply bg-background p-2; }
+  .delivery-panel .choice-list .checkbox-label { @apply my-1 rounded-md border border-transparent px-2 py-2; }
+  .delivery-panel .choice-list .checkbox-label:has(input:checked) { @apply border-info-foreground bg-info; }
+  .delivery-panel .choice-list .checkbox-label:focus-within { @apply outline-2 outline-offset-1 outline-ring; }
+  .delivery-panel summary { @apply min-h-8 rounded-sm; }
+  .delivery-panel summary:focus-visible { @apply outline-2 outline-offset-2 outline-ring; }
+  .delivery-panel .notice { @apply border-l-2; }
+  .delivery-panel .notice.info { @apply border-l-info-foreground; }
+  .delivery-panel .close-section { @apply mt-6 border-t-2; }
+  .delivery-panel .close-section[data-state=blocked] { border-top-color: var(--warning-foreground); }
+  .delivery-panel .close-section[data-state=complete], .delivery-panel .close-section[data-state=ready] { border-top-color: var(--success-foreground); }
+  .delivery-panel .blocker-list { @apply rounded-lg border border-border px-7 py-3; background: var(--detail-inset); }
+  .delivery-panel .blocker-list li::marker { color: var(--warning-foreground); }
+  .delivery-panel .file-icon { @apply text-info-foreground; background: var(--info); }
+  .delivery-panel .history-list { @apply rounded-xl border border-border p-5; background: var(--detail-surface); }
+  .delivery-panel .history-list li:last-child { @apply pb-0; }
+  .delivery-panel .history-dot { @apply bg-info-foreground; }
+  .delivery-panel .result-card { background: var(--detail-inset); }
+  .delivery-panel [data-visit-transport] { @apply rounded-lg border border-border p-4; background: var(--detail-inset); }
+  .file-list { @apply mt-5 flex flex-col gap-3.5; }
+  .file-card { @apply flex items-center gap-4 rounded-lg border border-border p-4; }
+  .file-card img { @apply max-w-24 rounded-md object-cover; }
+  .file-card > div { @apply grow break-words; }
+  .file-card h4 { @apply text-xs; }
+  .file-icon { @apply grid h-11 w-11 place-items-center rounded-lg bg-muted text-2xl text-muted-foreground; }
+  .history-list { @apply my-6 list-none p-0; }
+  .history-list li { @apply relative flex gap-5 pb-6 pl-1; }
+  .history-list li::before { @apply absolute top-4 bottom-0 left-2.5 w-px bg-border content-['']; }
+  .history-list li:last-child::before { @apply hidden; }
+  .history-dot { @apply z-10 mt-1 h-3 w-3 shrink-0 rounded-full border-3 border-background bg-muted-foreground; }
+  .history-list h4 { @apply text-xs; }
+  .history-list p { @apply mt-1 text-[10px] text-muted-foreground; }
+  .history-list details { @apply text-[10px]; }
+  .calendar-controls { @apply flex items-center gap-3; }
+  .calendar-controls > input { @apply w-40 text-xs; }
+  .segmented { @apply flex rounded-md border border-input bg-background p-1; }
+  .segmented button { @apply rounded-sm border-0 bg-transparent px-3 py-1.5 text-[11px] text-muted-foreground; }
+  .segmented button.active { @apply bg-accent text-foreground; }
+  .calendar-legend { @apply my-5 flex flex-wrap gap-5 text-[11px] text-muted-foreground; }
+  .calendar-legend > span { @apply flex items-center gap-1.5; }
+  .legend-dot { @apply inline-block h-2 w-2 rounded-sm; }
+  .legend-dot.booked { @apply bg-neutral-400; }
+  .legend-dot.in_progress { background:var(--warning-foreground); }
+  .legend-dot.completed { background:var(--success-foreground); }
+  .calendar-shell { @apply overflow-hidden rounded-lg border border-border bg-background; }
+  .calendar-head { @apply grid border-b border-border bg-muted/40 text-center; }
+  .calendar-head > div { @apply flex flex-col items-center justify-center border-r border-border py-4 text-[10px] text-muted-foreground; }
+  .calendar-head strong { @apply grid h-8 w-8 place-items-center text-lg font-medium text-foreground; }
+  .calendar-head .today strong { @apply rounded-full bg-primary text-primary-foreground; }
+  .calendar-scroll { @apply h-[580px] overflow-auto; }
+  .calendar-grid { @apply grid min-h-[1440px]; }
+  .hours { @apply relative min-h-[1440px]; }
+  .hours span { @apply absolute w-full pt-0.5 text-center font-mono text-[9px] text-muted-foreground; }
+  .calendar-day { @apply relative min-h-[1440px] border-l border-border; background:repeating-linear-gradient(to bottom,transparent 0,transparent 59px,var(--border) 59px,var(--border) 60px); }
+  .calendar-hour-label { @apply absolute left-1 top-0 z-0 text-[9px] leading-tight text-muted-foreground; }
+  .calendar-day-ended { @apply absolute right-0 left-0 bg-muted px-2 pt-3 text-[10px] text-muted-foreground; }
+  .calendar-event { @apply absolute z-10 overflow-hidden rounded-md border border-input bg-accent p-1.5 text-left text-[10px] text-foreground; }
+  .calendar-event strong { @apply block text-[11px] font-semibold; }
+  .calendar-event span, .calendar-event small { @apply mt-0.5 block text-[10px] leading-snug; }
+  .calendar-event.in_progress { background:var(--warning); color:var(--warning-foreground); }
+  .calendar-event.completed { background:var(--success); color:var(--success-foreground); }
+  .login-page { @apply grid min-h-screen grid-cols-[1.05fr_1fr] bg-background; }
+  .login-story { @apply relative flex min-h-screen flex-col justify-between overflow-hidden border-r border-border bg-muted/40 px-16 py-12 text-foreground; }
+  .brand.light { @apply p-0; }
+  .login-story > div:nth-child(2) { @apply z-10; }
+  .login-story .eyebrow { @apply text-[9px] text-muted-foreground; }
+  .login-story h1 { @apply my-5 font-sans text-4xl leading-tight font-medium tracking-tight; }
+  .login-story p:not(.eyebrow) { @apply max-w-80 text-sm leading-loose text-muted-foreground; }
+  .login-foot { @apply text-[10px] tracking-wide text-muted-foreground; }
+  .login-form { @apply grid place-items-center p-12; }
+  .login-form-inner { @apply w-full max-w-[365px]; }
+  .login-form-inner > .appearance-controls { @apply mb-12; }
+  .login-form h2 { @apply text-2xl font-semibold; }
+  .login-form .subtitle { @apply mb-8; }
+  .login-form .field { @apply my-5; }
+  .login-form [data-slot=button] { @apply w-full py-3; }
+  .login-form .form-actions { @apply block; }
+  .login-help { @apply mt-6 text-[11px] leading-relaxed text-muted-foreground; }
+}
+/* The hourly calendar uses imperative pixel geometry because intervals originate in data.
+   The following breakpoints preserve the dense table/calendar as horizontal scroll regions. */
+@media (max-width:1150px) {
+  :root { --sidebar-width:215px; }
+  .sidebar { @apply px-3; } .page-content { @apply px-6 pt-7; } .topbar { @apply px-6; }
+  .summary-strip > div { @apply px-4; } .summary-strip > div > span:last-child { @apply col-span-full; }
+  .delivery-table td, .delivery-table th { @apply px-3 py-4; } .list-toolbar > .muted { @apply hidden; }
+}
+@media (max-width:800px) {
+  :root { --sidebar-width:0px; }
+  .workspace[data-sidebar-collapsed] { --sidebar-width:0px; }
+  .workspace { @apply block; }
+  .desktop-sidebar { @apply hidden; }
+  .workspace-breadcrumb { @apply min-w-0 flex-1; }
+  .main { @apply m-0 w-full; }
+  .topbar { @apply min-h-14 px-5 text-[11px]; } .page-content { @apply px-5 pt-6; }
+  .page-heading { @apply mb-6; } .page-heading h1 { @apply text-2xl; } .page-heading .subtitle { @apply text-xs; }
+  .summary-strip { @apply py-4; } .summary-strip > div { @apply px-3; } .summary-strip strong { @apply text-2xl; }
+  .summary-strip > div > span:last-child { @apply text-[10px]; } .metric-label { @apply text-[8px]; }
+  .delivery-table { @apply min-w-[760px]; } .login-page { @apply grid-cols-1; }
+  .login-story { @apply min-h-64 border-r-0 border-b p-7; } .login-story h1 { @apply mt-5 mb-0 text-2xl; }
+  .login-story p:not(.eyebrow), .login-story .eyebrow, .login-foot { @apply hidden; } .login-form { @apply px-6 py-9; }
+  .login-form-inner > .appearance-controls { @apply mb-6; }
+  .calendar-controls { @apply flex-wrap justify-end; } .calendar-head, .calendar-grid { @apply min-w-[650px]; }
+  .calendar-shell { @apply overflow-auto; } .calendar-scroll { @apply h-[500px] w-full; }
+  .page-footer { @apply text-[9px]; } .page-footer span { @apply max-w-40 text-right; }
+  .directory-filters .field { @apply w-1/2 min-w-0; }
+}
+@media (max-width:500px) {
+  .theme-control > span { @apply sr-only; } .page-heading { @apply items-start; } .page-heading h1 { @apply text-xl; }
+  .summary-strip { @apply grid-cols-2 gap-y-5; } .summary-strip > div:nth-child(2) { @apply border-0; }
+  .product-row { @apply flex-wrap items-start; } .product-photo { @apply h-12 w-12; }
+  .product-description { width:calc(100% - 75px); } .product-quantity { @apply ml-16; }
+  .form-grid, .detail-grid { @apply grid-cols-1 gap-1; }
+  .panel-body, .panel-header { @apply p-5; } .panel-header-actions { @apply gap-1.5; }
+  .panel-header-actions .button { @apply px-2 py-1.5 text-[10px]; }
+  .panel-tabs { @apply gap-4 px-5; } .panel-meta { @apply px-5 pt-3; } .panel-meta > .muted { @apply ml-0; }
+  .visit-time span { @apply mt-1 block ml-0; }
+  .sidebar { @apply gap-2.5; } .sidebar .brand { @apply text-sm; } .nav-item { @apply text-[10px]; }
+  .dialog-content.delivery-panel { @apply w-screen; }
+  .file-card { @apply flex-wrap; } .calendar-controls > input { @apply w-32; }
+  .calendar-controls { @apply gap-1.5; } .segmented button { @apply px-2 py-1.5; }
+  .delivery-panel .panel-symbol { @apply hidden; }
+  .delivery-panel .detail-section, .delivery-panel .visit-card, .delivery-panel .inset-card { @apply p-4; }
+  .delivery-panel .assignment, .delivery-panel .visit-editor, .delivery-panel [data-visit-transport] { @apply p-3; }
+}
+@layer utilities {
+  /* Keep the error border/ring visible over the input's focus utilities. */
+  .delivery-panel input[aria-invalid=true], .delivery-panel select[aria-invalid=true] { @apply border-destructive ring-2 ring-destructive/20; }
+}
+@media (prefers-reduced-motion:reduce) { .spinner { @apply animate-none; } * { scroll-behavior:auto!important; } .delivery-panel .panel-tabs button, .delivery-panel .scheduling-trigger { transition: none; } }

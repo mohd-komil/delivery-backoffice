@@ -1,0 +1,48 @@
+export const en = {
+  readiness: 'Readiness for repeat work', held: 'Blocked · damaged product', released: 'Ready for repeat work',
+  holdHelp: 'Remaining work on this product line cannot be booked or started until a dispatcher confirms readiness. Resolving an Issue does not release it.',
+  release: 'Ready for repeat visit', releaseNote: 'What is ready and how was it checked?', releaseSaved: 'Readiness recorded',
+  holdOrigin: 'Recorded by {name} · {date}', releaseRecord: 'Released by {name} · {date}',
+  issueLinks: 'Operational Issues created or linked by this report', linkedIssue: 'Issue {id}', visit: 'Visit {number}',
+  documents: 'Product documents', generalDocuments: 'General delivery documents', purpose: 'Document purpose',
+  general: 'General document', instruction: 'Instruction', drawing: 'Drawing', unknown: 'Not recorded',
+  version: 'Version {version}', localUpload: 'Local upload', replaced: 'Previous version', current: 'Current version',
+  replace: 'Upload a new version', newFile: 'New file', replaceHelp: 'A new version keeps the same product and visit links. Previous files and signed report snapshots remain available.',
+  reportDocuments: 'Documents available when the report was submitted', noSnapshot: 'Document versions were not recorded in this older report.',
+};
+export const it = {
+  readiness: 'Disponibilità per il lavoro successivo', held: 'Bloccato · prodotto danneggiato', released: 'Pronto per il prossimo intervento',
+  holdHelp: 'Il lavoro residuo su questa riga non può essere prenotato o avviato finché il responsabile conferma la disponibilità. Risolvere un problema non rimuove il blocco.',
+  release: 'Pronto per il prossimo intervento', releaseNote: 'Che cosa è pronto e come è stato verificato?', releaseSaved: 'Disponibilità registrata',
+  holdOrigin: 'Registrato da {name} · {date}', releaseRecord: 'Sbloccato da {name} · {date}',
+  issueLinks: 'Problemi operativi creati o collegati da questo rapporto', linkedIssue: 'Problema {id}', visit: 'Visita {number}',
+  documents: 'Documenti dei prodotti', generalDocuments: 'Documenti generali della consegna', purpose: 'Tipo di documento',
+  general: 'Documento generale', instruction: 'Istruzioni', drawing: 'Disegno', unknown: 'Non registrato',
+  version: 'Versione {version}', localUpload: 'Caricamento locale', replaced: 'Versione precedente', current: 'Versione attuale',
+  replace: 'Carica una nuova versione', newFile: 'Nuovo file', replaceHelp: 'La nuova versione mantiene i collegamenti al prodotto e alla visita. I file precedenti e le copie nei rapporti firmati restano disponibili.',
+  reportDocuments: 'Documenti disponibili all’invio del rapporto', noSnapshot: 'Le versioni dei documenti non sono state registrate in questo vecchio rapporto.',
+};
+export const ru = {
+  readiness: 'Готовность к повторным работам', held: 'Заблокировано · товар повреждён', released: 'Готово к повторным работам',
+  holdHelp: 'Остаток этой позиции нельзя бронировать или начинать до подтверждения диспетчера. Закрытие проблемы не снимает блокировку.',
+  release: 'Готово к повторному выезду', releaseNote: 'Что готово и как это проверили?', releaseSaved: 'Готовность записана',
+  holdOrigin: 'Зафиксировал(а) {name} · {date}', releaseRecord: 'Разблокировал(а) {name} · {date}',
+  issueLinks: 'Проблемы, созданные или связанные с этим отчётом', linkedIssue: 'Проблема {id}', visit: 'Визит {number}',
+  documents: 'Документы по позициям', generalDocuments: 'Общие документы доставки', purpose: 'Назначение документа',
+  general: 'Общий документ', instruction: 'Инструкция', drawing: 'Чертёж', unknown: 'Не записано',
+  version: 'Версия {version}', localUpload: 'Локальная загрузка', replaced: 'Предыдущая версия', current: 'Текущая версия',
+  replace: 'Загрузить новую версию', newFile: 'Новый файл', replaceHelp: 'Новая версия сохраняет связь с товаром и визитом. Прежние файлы и снимки в подписанных отчётах остаются доступными.',
+  reportDocuments: 'Документы на момент отправки отчёта', noSnapshot: 'В этом старом отчёте версии документов не фиксировались.',
+};
+export const uz = {
+  readiness: 'Qayta ishga tayyorlik', held: 'Bloklangan · mahsulot shikastlangan', released: 'Qayta ishga tayyor',
+  holdHelp: 'Dispetcher tayyorlikni tasdiqlamaguncha bu qatordagi qolgan ishni band qilish yoki boshlash mumkin emas. Muammoni yopish blokni olib tashlamaydi.',
+  release: 'Qayta tashrifga tayyor', releaseNote: 'Nima tayyor va qanday tekshirildi?', releaseSaved: 'Tayyorlik qayd etildi',
+  holdOrigin: '{name} qayd etdi · {date}', releaseRecord: '{name} blokdan chiqardi · {date}',
+  issueLinks: 'Ushbu hisobot yaratgan yoki bog‘lagan muammolar', linkedIssue: 'Muammo {id}', visit: 'Tashrif {number}',
+  documents: 'Mahsulot hujjatlari', generalDocuments: 'Yetkazib berishning umumiy hujjatlari', purpose: 'Hujjat maqsadi',
+  general: 'Umumiy hujjat', instruction: 'Yo‘riqnoma', drawing: 'Chizma', unknown: 'Qayd etilmagan',
+  version: '{version}-versiya', localUpload: 'Mahalliy yuklash', replaced: 'Oldingi versiya', current: 'Joriy versiya',
+  replace: 'Yangi versiya yuklash', newFile: 'Yangi fayl', replaceHelp: 'Yangi versiya mahsulot va tashrif bog‘lanishlarini saqlaydi. Eski fayllar va imzolangan hisobot nusxalari mavjud bo‘lib qoladi.',
+  reportDocuments: 'Hisobot yuborilganda mavjud hujjatlar', noSnapshot: 'Bu eski hisobotda hujjat versiyalari qayd etilmagan.',
+};

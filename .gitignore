@@ -1,0 +1,19 @@
+# Local runtime state, credentials and backup exports
+**/.local/
+**/.vercel/
+**/.env
+**/.env.*
+!**/.env.example
+*.log
+*.err
+*.dump
+*.backup
+*.pem
+*.key
+*.pfx
+
+# Local planning snapshot, generated artifacts and screenshots of the demo
+/PLAN.source.md
+/backoffice-backend/docs/openapi.json
+/backoffice-frontend/docs/screenshots/
+/crew-frontend/docs/screenshots/
