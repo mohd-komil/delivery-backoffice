@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { seedMvpPilot } from '../scripts/demo-pilot';
 import { AppModule, configureApplication } from '../src/app';
 import { applicationUrl, config } from '../src/config';
+import { CrewVisitListSchema } from '../src/crew/contracts';
 import { applicationMigrations, Database, makeDataSource, rows } from '../src/database/database';
 import { AppointmentSchema, createDelivery as createUnplannedDelivery, DeliverySchema, IdSchema, InstantSchema, InstructionsSchema, LineServiceStatusSchema, ServiceTypeSchema, TaskTemplateSchema, type Appointment, type Delivery, type SourceSnapshot, type VisitResult } from '../src/domain/model';
 import { instantiateTask, lineServiceStatuses } from '../src/domain/rules';
@@ -57,8 +58,9 @@ const CrewVisitSummary = z.object({
   destination: z.object({ address: z.string().nullable(), city: z.string().nullable(), country: z.string().nullable() }).strict(),
   crews: z.array(z.object({ id: IdSchema, name: z.string() }).strict()),
   vehicles: z.array(z.object({ id: IdSchema, name: z.string(), plate: z.string() }).strict()),
+  route: CrewVisitListSchema.shape.visits.element.shape.route,
+  routeStartBlocker: CrewVisitListSchema.shape.visits.element.shape.routeStartBlocker,
 }).strict();
-const CrewVisitList = z.object({ visits: z.array(CrewVisitSummary) }).strict();
 const CrewVisitDetail = CrewVisitSummary.extend({
   version: z.number().int().positive(),
   responsibleParticipant: z.object({ id: IdSchema, name: z.string() }).strict().nullable(),
@@ -264,7 +266,7 @@ void test('crew access and visit work through Nest HTTP use isolated credentials
     async function crewVisits(cookie: string) {
       const reply = await expectStatus('/crew/visits', 200, { cookie });
       assertNoStore(reply);
-      return CrewVisitList.parse(reply.data).visits;
+      return CrewVisitListSchema.parse(reply.data).visits;
     }
 
     async function crewDetail(cookie: string, visitId: string) {
@@ -394,6 +396,7 @@ void test('crew access and visit work through Nest HTTP use isolated credentials
       const visible = await crewVisits(memberSession.cookie);
       assert.deepEqual(visible.map((visit) => visit.id), [ownedVisit]);
       assert.equal(visible[0]?.confirmationStatus, 'awaiting_customer_confirmation');
+      assert.ok(visible.every(({ route }) => route === null), 'Standalone visits must not imply a published route');
       assert.deepEqual((await crewVisits(rosterSession.cookie)).map((visit) => visit.id), [foreignVisit]);
       const missing = await expectStatus(`/crew/visits/${randomUUID()}`, 404, { cookie: memberSession.cookie });
       assertNoStore(missing);
@@ -406,6 +409,8 @@ void test('crew access and visit work through Nest HTTP use isolated credentials
       await expectStatus('/crew/visits/not-a-visit', 400, { cookie: memberSession.cookie });
 
       const detail = await crewDetail(memberSession.cookie, ownedVisit);
+      assert.equal(detail.route, null);
+      assert.equal(detail.routeStartBlocker, null, 'Standalone visits have no route departure or stop-order blocker');
       assert.equal(detail.id, ownedVisit);
       assert.equal(detail.pickingName, delivery.source.pickingName);
       assert.deepEqual(detail.crews, [{ id: assignedCrew.id, name: assignedCrew.name }]);

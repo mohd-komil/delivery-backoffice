@@ -49,6 +49,8 @@ const CrewVisitSummarySchema = AppointmentSchema.pick({ id: true, startsAt: true
   destination: Customer.pick({ address: true, city: true, country: true }),
   crews: z.array(z.object({ id: IdSchema, name: TextSchema }).strict()),
   vehicles: z.array(VehicleSnapshotSchema.pick({ id: true, name: true, plate: true })),
+  route: z.object({ id: IdSchema, name: z.string(), status: z.enum(['published', 'in_progress', 'returning', 'returned', 'closed']), version: z.number().int().positive() }).nullable().optional(),
+  routeStartBlocker: z.string().nullable().optional(),
 });
 export const CREW_VISIT_LIST_LIMIT = 200;
 export const CrewVisitListSchema = z.object({ visits: z.array(CrewVisitSummarySchema).max(CREW_VISIT_LIST_LIMIT) }).strict();

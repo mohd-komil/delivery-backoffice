@@ -124,9 +124,10 @@ export class CrewVisits {
   async list(principal: CrewProfile) {
     const participantId = principal.id.toLowerCase();
     const matches = await this.fetch(participantId, null);
+    const links = await this.routeLinks(matches.map(({ appointment }) => appointment.id));
     return { visits: matches.flatMap((row) => {
       const visit = visibleVisit(row, participantId);
-      return visit ? [visit.summary] : [];
+      return visit ? [{ ...visit.summary, route: links.get(row.appointment.id) ?? null }] : [];
     }) };
   }
 
@@ -150,11 +151,21 @@ export class CrewVisits {
       canReadDocuments ? this.files.crewDocuments(row.deliveryId, row.appointment.id, row.source.items.map(({ sourceLineId }) => sourceLineId)) : [],
     ]);
     const detail = crewVisitDetail(row, principal.id, actualStartedAt);
+    detail.route = (await this.routeLinks([row.appointment.id])).get(row.appointment.id) ?? null;
     const routeBlocker = detail.canStart ? await routeVisitStartBlocker(this.db.source.manager,row.appointment.id) : null;
+    detail.routeStartBlocker = routeBlocker?.code ?? null;
     if(routeBlocker) detail.canStart=false;
     return documents.length ? {
       ...detail, documents: documents.map((document)=>DocumentSnapshotSchema.strip().parse(document)),
     } : detail;
+  }
+
+  private async routeLinks(ids: string[]) {
+    const found = await rows(this.db.source.manager, z.object({ appointmentId: IdSchema, id: IdSchema, name: z.string(),
+      status: z.enum(['published', 'in_progress', 'returning', 'returned', 'closed']), version: z.number().int().positive() }),
+    `SELECT s.appointment_id AS "appointmentId",p.id,p.data->'draft'->>'name' AS name,p.status,p.version
+      FROM route_stop s JOIN route_publication p ON p.id=s.route_id WHERE s.active AND p.status<>'cancelled' AND s.appointment_id=ANY($1::uuid[])`, [ids]);
+    return new Map(found.map(({ appointmentId, ...route }) => [appointmentId, route]));
   }
 
   async downloadDocument(appointmentId: string, fileId: string, principal: CrewProfile) {

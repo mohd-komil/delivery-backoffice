@@ -403,6 +403,6 @@ function RouteEditor({ catalogs, revision, route, onSaved, onEntranceChanged, on
         <NearbyWork jobs={catalogs.jobs} revision={revision} selectedIds={selectedIds} onAdd={addStop} />
       </div>
     </div>
-  </ActionForm></div><RoutePublication route={route} dirty={publicationDirty} revision={revision} participants={catalogs.participants} onPublished={markPublished} onOpenDelivery={onOpenDelivery} vehicleName={catalogs.vehicles.find((vehicle) => vehicle.id === route?.vehicleId)?.name} /></>;
+  </ActionForm></div><RoutePublication route={route} dirty={publicationDirty} revision={revision} participants={catalogs.participants} operationCatalogs={{ participants: catalogs.participants, crews: catalogs.crews, vehicles: catalogs.vehicles, points: catalogs.list.points }} onPublished={markPublished} onOpenDelivery={onOpenDelivery} vehicleName={catalogs.vehicles.find((vehicle) => vehicle.id === route?.vehicleId)?.name} /></>;
 }
 

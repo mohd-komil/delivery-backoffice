@@ -17,6 +17,7 @@ const scheduleTabs = ['today', 'upcoming'] as const;
 
 function VisitCard({ visit }: { visit: VisitSummary }) {
   const t = useTranslations('crew');
+  const routeText = useTranslations('routes');
   const locale = useLocale();
   const address = destinationLabel(visit.destination);
 
@@ -35,6 +36,7 @@ function VisitCard({ visit }: { visit: VisitSummary }) {
         {formatVisitDate(visit.startsAt, locale, { weekday: 'short' })} · {formatVisitWindow(visit, locale)}
       </time>
       <p className="card-detail"><Icon name="pin" size={16} />{address || t('addressUnavailable')}</p>
+      {visit.route ? <p className="card-detail"><Icon name="truck" size={16} />{routeText('routeLink', { name: visit.route.name })}</p> : null}
       <div className="card-resources">
         <p className="card-detail"><Icon name="users" size={16} />{visit.crews.map((crew) => crew.name).join(', ')}</p>
         <p className="card-detail"><Icon name="truck" size={16} />{visit.vehicles.length

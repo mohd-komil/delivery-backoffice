@@ -6,6 +6,7 @@ x-application: &application
     BACKOFFICE_RUNTIME: docker
     FRONTEND_ORIGIN: http://127.0.0.1:3000
     CREW_FRONTEND_ORIGIN: ${CREW_FRONTEND_ORIGIN:-http://127.0.0.1:3002}
+    ROUTE_PUBLICATION_ENABLED: ${ROUTE_PUBLICATION_ENABLED:-false}
     PORT: "3001"
   secrets: &connection-secrets
     - database_url

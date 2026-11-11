@@ -29,7 +29,7 @@ const route = routeDraftSchema.parse({ id: routeId, name: 'DEMO publication', ve
 const sourceItem = detail.delivery.source.items[0];
 assert.ok(sourceItem);
 const scope = workScopeSchema.parse({ revision: 1, sourceFingerprint: 'a'.repeat(64), confirmedAt: at, confirmedBy: { id: personId, name: 'DEMO operator' },
-  lines: [{ sourceLineId: 10, deliveryMilli: 500, installationMilli: 0, collectionMilli: 0, service: 'delivery_only', sourceItem }] });
+  lines: [{ sourceLineId: 10, deliveryMilli: 500, installationMilli: 0, collectionMilli: 0, service: 'delivery_only', sourceItem: { ...sourceItem, saleOrderId: 1 } }] });
 function review(enabled: boolean) {
   return publicationReviewSchema.parse({ routeId, draftVersion: 1, fingerprint: 'a'.repeat(64), publicationEnabled: enabled, timeline: route.timeline,
     feasibility: { status: 'feasible_estimate', checkedAt: at, fingerprint: 'b'.repeat(64), findings: [], workDurations: [] },
@@ -135,6 +135,7 @@ void test('unsaved changes prevent review and an existing publication is read ba
     await waitFor(() => readBack === 1, 'existing publication');
     assert.match(page.container.textContent ?? '', /already been published/);
     assert.match(page.container.textContent ?? '', /Customer confirmation at publication/);
+    assert.match(page.container.textContent ?? '', /Order 1 · Line 10/);
     assert.match(page.container.textContent ?? '', /Deliver: 0.5 unit/);
     assert.equal(api.calls.some((entry) => entry.method !== 'GET'), false);
   } finally { await page.close(); }

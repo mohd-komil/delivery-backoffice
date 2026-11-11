@@ -16,6 +16,7 @@ import * as workPlan from './messages/work-plan';
 import * as operationsFlow from './messages/operations-flow';
 import * as routeChecks from './messages/route-checks';
 import * as routePublication from './messages/route-publication';
+import * as routeOperations from './messages/route-operations';
 
 export function messagesForLocale(locale: Locale) {
   return {
@@ -36,6 +37,7 @@ export function messagesForLocale(locale: Locale) {
     operationsFlow: operationsFlow[locale],
     routeChecks: routeChecks[locale],
     routePublication: routePublication[locale],
+    routeOperations: routeOperations[locale],
   };
 }
 

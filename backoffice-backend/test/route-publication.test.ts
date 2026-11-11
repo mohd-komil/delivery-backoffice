@@ -176,6 +176,12 @@ void test('route publication uses real authorization and atomic work/resource ow
       const f = await fixture();
       const prepared = await prepare(f);
       assert.equal(prepared.review.publicationEnabled, false);
+      const absentPublication = await fetch(`${base}/api/routes/${prepared.saved.id}/publication`, {
+        headers: { Cookie: operatorCookie, Origin: config().FRONTEND_ORIGIN },
+      });
+      assert.equal(absentPublication.status, 200);
+      assert.match(absentPublication.headers.get('content-type') ?? '', /^application\/json/);
+      assert.equal(await absentPublication.text(), 'null', 'An unpublished route must return JSON null, not an empty 200 body');
       const path = `/routes/${prepared.saved.id}/publish`;
       const before = await snapshot();
       const disabled = await request(path, 'POST', prepared.publish);
@@ -208,6 +214,10 @@ void test('route publication uses real authorization and atomic work/resource ow
       assert.equal(published.id, prepared.saved.id);
       assert.equal(published.stops.length, 2);
       assert.ok(published.stops.every(({ source }) => source === 'created'));
+      const publishedDocument = await success(`/routes/${published.id}/publication`);
+      assert.deepEqual(Published.parse(publishedDocument), published);
+      assert.equal(z.object({ review: Review }).parse(publishedDocument).review.fingerprint, prepared.review.fingerprint,
+        'Published detail includes the frozen exact review, not dynamically recomputed remaining work');
       for (const stop of published.stops) {
         const detail = Detail.parse(await success(`/deliveries/${stop.deliveryId}`));
         const visit = detail.delivery.appointments.find(({ id }) => id === stop.appointmentId); assert.ok(visit);

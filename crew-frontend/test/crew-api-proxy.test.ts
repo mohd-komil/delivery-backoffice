@@ -16,6 +16,47 @@ void test('crew proxy cannot reach backoffice endpoints or write outside approve
   assert.equal(upstream.mock.callCount(), 0);
 });
 
+void test('crew route proxy only allows assigned-route reads and bounded execution actions', async (t) => {
+  const routeId = '7e478ed3-3d44-41a5-8993-a69c8ed36248';
+  const forwarded: string[] = [];
+  t.mock.method(globalThis, 'fetch', (destination: URL, init: RequestInit) => {
+    forwarded.push(`${init.method} ${destination.pathname}`);
+    return Promise.resolve(Response.json({ ok: true }));
+  });
+  const command = (body = '{}') => new Request(origin, { method: 'POST', body, headers: { Origin: origin, 'Content-Type': 'application/json' } });
+  assert.equal((await proxyCrewRequest(new Request(origin), ['routes'])).status, 200);
+  assert.equal((await proxyCrewRequest(new Request(origin), ['routes', routeId])).status, 200);
+  for (const action of ['depart', 'returning', 'return']) assert.equal((await proxyCrewRequest(command(), ['routes', routeId, action])).status, 200);
+  for (const action of ['cancel', 'close', 'amend', 'skip', 'reconcile', 'warehouse-receipt']) assert.equal((await proxyCrewRequest(command(), ['routes', routeId, action])).status, 404);
+  assert.equal((await proxyCrewRequest(command(), ['routes', routeId, 'return', 'extra'])).status, 404);
+  assert.equal((await proxyCrewRequest(new Request(origin), ['routes', '..'])).status, 404);
+  assert.equal((await proxyCrewRequest(command('x'.repeat(16 * 1024 + 1)), ['routes', routeId, 'return'])).status, 413);
+  assert.deepEqual(forwarded, ['GET /api/crew/routes', `GET /api/crew/routes/${routeId}`, `POST /api/crew/routes/${routeId}/depart`,
+    `POST /api/crew/routes/${routeId}/returning`, `POST /api/crew/routes/${routeId}/return`]);
+});
+
+void test('isolated API origin is allowed only with explicit test mode and arbitrary hosts remain blocked', async (t) => {
+  const previousOrigin = process.env.CREW_API_ORIGIN;
+  const previousTest = process.env.BACKOFFICE_TEST;
+  const upstream = t.mock.method(globalThis, 'fetch', (destination: URL) => {
+    assert.equal(destination.origin, 'http://127.0.0.1:3011');
+    return Promise.resolve(Response.json({ routes: [] }));
+  });
+  try {
+    process.env.CREW_API_ORIGIN = 'http://127.0.0.1:3011';
+    delete process.env.BACKOFFICE_TEST;
+    assert.equal((await proxyCrewRequest(new Request(origin), ['routes'])).status, 503);
+    process.env.BACKOFFICE_TEST = '1';
+    assert.equal((await proxyCrewRequest(new Request(origin), ['routes'])).status, 200);
+    process.env.CREW_API_ORIGIN = 'http://169.254.169.254';
+    assert.equal((await proxyCrewRequest(new Request(origin), ['routes'])).status, 503);
+    assert.equal(upstream.mock.callCount(), 1);
+  } finally {
+    if (previousOrigin === undefined) delete process.env.CREW_API_ORIGIN; else process.env.CREW_API_ORIGIN = previousOrigin;
+    if (previousTest === undefined) delete process.env.BACKOFFICE_TEST; else process.env.BACKOFFICE_TEST = previousTest;
+  }
+});
+
 void test('crew proxy forwards a full-size issue photo and supports scoped checklist patches', async (t) => {
   const visitId = '7e478ed3-3d44-41a5-8993-a69c8ed36248';
   const checkpointId = '7e478ed3-3d44-41a5-8993-a69c8ed36249';

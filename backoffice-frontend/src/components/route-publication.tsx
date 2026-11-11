@@ -6,27 +6,31 @@ import { motion, MotionConfig } from 'motion/react';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { ApiError, apiRequest, errorMessage, mutate } from '@/lib/api';
-import { detailSchema, templateSchema, type Delivery, type DeliveryDetail, type Participant, type TaskTemplate, type WorkScope } from '@/lib/contracts';
+import { detailSchema, templateSchema, type DeliveryDetail, type Participant, type TaskTemplate } from '@/lib/contracts';
 import type { RouteDraft } from '@/lib/route-drafts';
 import { publicationCapabilitySchema, publicationDetailSchema, publicationRequestSchema, publicationReviewSchema, publicationSummarySchema, type PublicationDetail, type PublicationRequest, type PublicationReview, type PublicationSummary } from '@/lib/route-publication';
-import { initialWorkDrafts, validateWorkDrafts, workOperations, type WorkDraft } from '@/lib/visit-work';
+import { initialWorkDrafts, validateWorkDrafts, type WorkDraft } from '@/lib/visit-work';
 import { formatDateTime } from '@/lib/time';
 import { Field, Notice } from './ui';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
 import { WorkScopeFields } from './visit-work';
+import { ScopeSummary } from './route-publication-summary';
+import { RouteOperationsPanel, type RouteOperationCatalogs } from './route-operations';
 
 type Selection = { drafts: WorkDraft[]; templateIds: string[]; responsibleParticipantId: string; returnRequestId: string };
 type Loaded = { revision: number; details: DeliveryDetail[]; templates: TaskTemplate[]; enabled: boolean };
 const stopKey = (stop: RouteDraft['stops'][number]) => `${stop.deliveryId}:${stop.appointmentId ?? 'new'}`;
 
-export function RoutePublication({ route, dirty, revision, participants, onPublished, onOpenDelivery, vehicleName }: {
+export function RoutePublication({ route, dirty, revision, participants, onPublished, onOpenDelivery, vehicleName, operationCatalogs }: {
   route?: RouteDraft; dirty: boolean; revision: number; participants: readonly Participant[]; onPublished: (summary: PublicationSummary) => void;
   onOpenDelivery?: (deliveryId: string) => void;
   vehicleName?: string;
+  operationCatalogs?: RouteOperationCatalogs;
 }) {
   const t = useTranslations('routePublication');
+  const operations = useTranslations('routeOperations');
   const locale = useLocale();
   const [open, setOpen] = useState(false);
   const [opened, setOpened] = useState(false);
@@ -44,11 +48,11 @@ export function RoutePublication({ route, dirty, revision, participants, onPubli
     return () => controller.abort();
   }, [routeId, revision, onPublished]);
   return <Card className="mt-4 grid gap-3 border-info-foreground/25 p-4 sm:p-5">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-base font-semibold">{t('title')}</h2><p className="mt-1 text-sm text-muted-foreground">{t('intro')}</p></div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-base font-semibold">{summary ? operations('title') : t('title')}</h2><p className="mt-1 text-sm text-muted-foreground">{summary ? operations('currentHelp') : t('intro')}</p></div>
       {!summary ? <Button type="button" variant="outline" disabled={!route} aria-expanded={open} onClick={() => { setOpened(true); setOpen((value) => !value); }}>{t(open ? 'hide' : 'open')}</Button> : null}</div>
     {!route ? <p className="text-xs text-muted-foreground">{t('saveFirst')}</p> : null}
-    {summary ? <Notice tone="success"><strong>{t('alreadyPublished')}</strong><p>{t('snapshot', { version: summary.version })}</p><p>{t('publishedHelp')}</p></Notice> : null}
-    {summary?.review ? <FrozenPublication review={summary.review} /> : null}
+    {summary ? <p className="text-xs text-muted-foreground">{t('alreadyPublished')} {t('publishedHelp')}</p> : null}
+    {summary ? <RouteOperationsPanel routeId={summary.id} revision={revision} fallbackReview={summary.review} catalogs={operationCatalogs ?? { participants, crews: [], vehicles: [], points: [] }} onOpenDelivery={onOpenDelivery} /> : null}
     {summaryError && open ? <Notice tone="error">{errorMessage(summaryError, locale)}</Notice> : null}
     {route && opened && !summary ? <MotionConfig reducedMotion="user"><motion.div hidden={!open} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <PublicationForm key={route.id} route={route} dirty={dirty || !!summaryError} revision={revision} participants={participants} onPublished={(value) => { setSummary(value); onPublished(value); }} onOpenDelivery={onOpenDelivery} vehicleName={vehicleName} />
@@ -241,28 +245,4 @@ function PublicationForm({ route, dirty, revision, participants, onPublished, on
       <div><Button type="button" disabled={!accepted || pending !== null || !loaded?.enabled || !review.result.publicationEnabled || review.result.feasibility.status !== 'feasible_estimate'} onClick={() => { void publish(); }}>{t(pending === 'publish' ? 'publishing' : 'publish')}</Button></div>
     </section> : null}
   </div>;
-}
-
-function ScopeSummary({ scope, source }: { scope: WorkScope; source?: Delivery['source'] }) {
-  const t = useTranslations('routePublication');
-  return <ul className="mt-2 grid gap-2 text-xs">{scope.lines.map((line) => <li key={line.sourceLineId} className="rounded-md border bg-background/70 p-2">
-    <strong>{line.sourceItem.name}</strong><span className="ml-2 text-muted-foreground">{source?.salesOrders?.find((order) => order.id === line.sourceItem.saleOrderId)?.name ?? source?.saleOrderName} · {t('line', { id: line.sourceLineId })}</span>
-    <span className="mt-1 block">{workOperations.filter((operation) => line[operation.key] > 0).map((operation) => `${t(operation.label)}: ${line[operation.key] / 1000} ${line.sourceItem.uom}`).join(' · ')}</span>
-  </li>)}</ul>;
-}
-
-function FrozenPublication({ review }: { review: PublicationReview }) {
-  const t = useTranslations('routePublication');
-  const locale = useLocale();
-  return <section className="grid gap-3">
-    <p className="text-xs text-info-foreground">{t('estimate')}</p>
-    <dl className="grid gap-2 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">{t('departure')}</dt><dd>{formatDateTime(review.timeline.departAt, locale)}</dd></div><div><dt className="text-muted-foreground">{t('return')}</dt><dd>{review.timeline.returnAt ? formatDateTime(review.timeline.returnAt, locale) : '—'}</dd></div></dl>
-    <ol className="grid gap-3">{review.stops.map((stop, index) => <li key={stop.appointmentId} className="rounded-md border p-3">
-      <strong>{index + 1}. {stop.pickingName}</strong><p className="text-xs text-muted-foreground">{formatDateTime(stop.startsAt, locale)} — {formatDateTime(stop.endsAt, locale)}</p>
-      <p className="mt-2 text-sm">{t('responsible')}: {stop.responsibleParticipant.name}</p>
-      <p className="text-xs text-muted-foreground">{stop.assignments.map((assignment) => `${assignment.crewName} · ${assignment.people.map((person) => person.name).join(', ')}`).join(' · ')}</p>
-      <p className="mt-2 text-xs text-muted-foreground">{t('confirmationAtPublication')}: <span className={`badge ${stop.customerConfirmationStatus === 'customer_confirmed' ? 'success' : 'warning'}`}>{t(stop.customerConfirmationStatus)}</span></p>
-      <ScopeSummary scope={stop.workScope} />
-    </li>)}</ol>
-  </section>;
 }

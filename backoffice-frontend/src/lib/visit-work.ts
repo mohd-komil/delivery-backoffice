@@ -30,7 +30,7 @@ export function initialWorkDrafts(lines: readonly LineService[], scope?: WorkSco
   });
 }
 
-function quantityMilli(value: string): number | null {
+export function quantityMilli(value: string): number | null {
   if (value.trim() === '') return 0;
   if (!/^\d+(?:\.\d{0,3})?$/u.test(value)) return null;
   const milli = Math.round(Number(value) * 1000);

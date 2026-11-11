@@ -75,6 +75,8 @@ void test('publication browser-demo origin is available only in explicit test mo
   assert.equal(parseEnvironment(base).ROUTE_PUBLICATION_ENABLED, false);
   assert.throws(() => parseEnvironment({ ...base, FRONTEND_ORIGIN: 'http://127.0.0.1:3010' }));
   assert.equal(parseEnvironment({ ...base, FRONTEND_ORIGIN: 'http://127.0.0.1:3010', BACKOFFICE_TEST: '1' }).FRONTEND_ORIGIN, 'http://127.0.0.1:3010');
+  assert.throws(() => parseEnvironment({ ...base, CREW_FRONTEND_ORIGIN: 'http://127.0.0.1:3012' }));
+  assert.equal(parseEnvironment({ ...base, CREW_FRONTEND_ORIGIN: 'http://127.0.0.1:3012', BACKOFFICE_TEST: '1' }).CREW_FRONTEND_ORIGIN, 'http://127.0.0.1:3012');
   assert.throws(() => parseEnvironment({ ...base, ROUTE_PUBLICATION_ENABLED: 'yes' }));
 });
 

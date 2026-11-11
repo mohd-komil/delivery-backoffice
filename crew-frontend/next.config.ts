@@ -16,6 +16,7 @@ const config: NextConfig = {
         ],
       },
       { source: '/visits/:path*', headers: privateHeaders },
+      { source: '/routes/:path*', headers: privateHeaders },
       {
         source: '/sw.js',
         headers: [

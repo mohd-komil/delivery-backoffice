@@ -4,15 +4,11 @@ import { useFormatter, useLocale, useTranslations } from 'next-intl';
 import type { Appointment } from '@/lib/contracts';
 import { sourceLineLabel } from '@/lib/source';
 import { workOperations } from '@/lib/visit-work';
+import { incompleteReasonLabels } from '@/lib/incomplete-work';
 import { DetailIcon } from './delivery-detail-presentation';
 import { DataTable } from './ui/data-table';
 
 type VisitResult = Appointment['results'][number];
-type IncompleteReason = NonNullable<VisitResult['incompleteWork']>[number]['reason'];
-const reasonLabels = {
-  missing_goods_or_parts: 'incompleteMissingGoodsOrParts', damage: 'incompleteDamage', access: 'incompleteAccess',
-  customer_refused: 'incompleteCustomerRefused', time_shortage: 'incompleteTimeShortage', other: 'incompleteOther',
-} as const satisfies Record<IncompleteReason, string>;
 
 export function DeliveryResultWork({ result }: { result: VisitResult }) {
   const t = useTranslations('delivery');
@@ -44,7 +40,7 @@ export function DeliveryResultWork({ result }: { result: VisitResult }) {
           <td className="min-w-52 max-w-sm whitespace-normal">
             <span className={`badge ${unperformed === 0 ? 'success' : 'warning'}`}><DetailIcon name={unperformed === 0 ? 'check' : 'alert'} />{t(status)}</span>
             {unperformed > 0 ? reason ? <>
-              <p className="mt-2 text-sm font-medium">{t(reasonLabels[reason.reason])}</p>
+              <p className="mt-2 text-sm font-medium">{t(incompleteReasonLabels[reason.reason])}</p>
               {reason.note ? <p className="mt-1 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{reason.note}</p> : null}
             </> : <p className="small muted mt-2">{t(result.incompleteWork === undefined ? 'visitWorkLegacyReason' : 'visitWorkMissingReason')}</p> : null}
           </td>

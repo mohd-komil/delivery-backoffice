@@ -23,7 +23,10 @@ function Database-Snapshot([string]$Database, [switch]$Container) {
         $value = Query-Database $Database $sql -Container:$Container | ConvertFrom-Json
         $tables += [ordered]@{ name=$name; count=[long]$value.count; digest=$value.digest }
     }
-    $sequences = Query-Database $Database "SELECT COALESCE(json_agg(s ORDER BY schemaname,sequencename),'[]'::json)::text FROM (SELECT schemaname,sequencename,start_value,min_value,max_value,increment_by,cycle,cache_size,last_value FROM pg_sequences WHERE schemaname !~ '^pg_' AND schemaname <> 'information_schema') s" -Container:$Container | ConvertFrom-Json -NoEnumerate
+    $sequenceJson = Query-Database $Database "SELECT COALESCE(json_agg(s ORDER BY schemaname,sequencename),'[]'::json)::text FROM (SELECT schemaname,sequencename,start_value,min_value,max_value,increment_by,cycle,cache_size,last_value FROM pg_sequences WHERE schemaname !~ '^pg_' AND schemaname <> 'information_schema') s" -Container:$Container
+    # psql returns JSON aggregates over several lines when several schemas exist.
+    # ConvertFrom-Json needs one document, not one pipeline input per output line.
+    $sequences = ($sequenceJson -join "`n") | ConvertFrom-Json -NoEnumerate
     return [ordered]@{ tables=$tables; sequences=$sequences }
 }
 function Local-FileInventory([string]$Directory, [string[]]$SelectedNames = @()) {
@@ -97,5 +100,5 @@ SELECT json_build_object(
 ) t)
 )::text
 '@
-    return ((Query-Database $Database $sql -Container) | ConvertFrom-Json)
+    return (((Query-Database $Database $sql -Container) -join "`n") | ConvertFrom-Json)
 }

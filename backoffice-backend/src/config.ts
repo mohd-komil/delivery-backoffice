@@ -13,10 +13,14 @@ const Environment = z.object({
   CREW_FRONTEND_ORIGIN: z.enum([
     'http://127.0.0.1:3002', 'http://localhost:3002',
     'https://127.0.0.1:3002', 'https://localhost:3002',
+    'http://127.0.0.1:3012', 'http://localhost:3012',
   ]).default('http://127.0.0.1:3002'),
 }).superRefine((environment, context) => {
   if (environment.FRONTEND_ORIGIN.endsWith(':3010') && environment.BACKOFFICE_TEST !== '1') {
     context.addIssue({ code: 'custom', path: ['FRONTEND_ORIGIN'], message: 'The publication browser-demo origin requires the isolated test runtime' });
+  }
+  if (environment.CREW_FRONTEND_ORIGIN.endsWith(':3012') && environment.BACKOFFICE_TEST !== '1') {
+    context.addIssue({ code: 'custom', path: ['CREW_FRONTEND_ORIGIN'], message: 'The route Crew browser-demo origin requires the isolated test runtime' });
   }
   const targets = [
     ['DATABASE_URL', environment.DATABASE_URL, '/delivery_backoffice'],

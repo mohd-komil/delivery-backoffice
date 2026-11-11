@@ -1,4 +1,5 @@
 export const en = {
+  order: 'Order {id}',
   confirmationAtPublication: 'Customer confirmation at publication',
   routeOccupancy: 'Whole-trip reservations', routeOccupancyHelp: 'The visit calendar shows on-site work. These reservations also include outbound travel, waiting and the journey back. A gap between visits does not mean availability.', routeBuffer: 'Transfer buffer: {minutes} min',
   routeState_published: 'Published', routeState_in_progress: 'On route', routeState_returning: 'Returning', routeState_returned: 'Returned · reconciliation', routeState_closed: 'Closed',
@@ -24,6 +25,7 @@ export const en = {
   personMissing: 'The responsible participant must belong to the actual route team.',
 };
 export const it = {
+  order: 'Ordine {id}',
   confirmationAtPublication: 'Conferma cliente alla pubblicazione',
   routeOccupancy: 'Prenotazioni dell’intero giro', routeOccupancyHelp: 'Il calendario visite mostra il lavoro sul posto. Queste prenotazioni includono anche andata, attesa e ritorno. Uno spazio tra le visite non significa disponibilità.', routeBuffer: 'Margine di trasferimento: {minutes} min',
   routeState_published: 'Pubblicato', routeState_in_progress: 'In giro', routeState_returning: 'In rientro', routeState_returned: 'Rientrato · verifica', routeState_closed: 'Chiuso',
@@ -49,6 +51,7 @@ export const it = {
   personMissing: 'Il responsabile deve appartenere alla squadra effettiva del giro.',
 };
 export const ru = {
+  order: 'Заказ {id}',
   confirmationAtPublication: 'Подтверждение клиента на момент публикации',
   routeOccupancy: 'Резервы на весь рейс', routeOccupancyHelp: 'Календарь визитов показывает работы на месте. Эти резервы включают также выезд, ожидание и обратную дорогу. Промежуток между визитами не означает доступность.', routeBuffer: 'Запас между рейсами: {minutes} мин',
   routeState_published: 'Опубликован', routeState_in_progress: 'В рейсе', routeState_returning: 'Возвращаются', routeState_returned: 'Вернулись · сверка', routeState_closed: 'Закрыт',
@@ -74,6 +77,7 @@ export const ru = {
   personMissing: 'Ответственный должен входить в фактический состав рейса.',
 };
 export const uz = {
+  order: 'Buyurtma {id}',
   confirmationAtPublication: 'E’lon qilish vaqtidagi mijoz tasdig‘i',
   routeOccupancy: 'Butun reys bandliklari', routeOccupancyHelp: 'Tashrif taqvimi manzildagi ishlarni ko‘rsatadi. Bu bandliklar borish, kutish va qaytishni ham qamrab oladi. Tashriflar orasidagi bo‘shliq mavjudlik degani emas.', routeBuffer: 'Reyslar oralig‘i: {minutes} daqiqa',
   routeState_published: 'E’lon qilingan', routeState_in_progress: 'Reysda', routeState_returning: 'Qaytmoqda', routeState_returned: 'Qaytgan · tekshiruv', routeState_closed: 'Yopilgan',

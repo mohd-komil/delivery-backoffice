@@ -3,6 +3,7 @@ import { z } from 'zod';
 const authCookie = 'crew_session';
 const noStore = { 'Cache-Control': 'private, no-store' };
 const backendOrigin = z.enum(['http://127.0.0.1:3001', 'http://localhost:3001']);
+const isolatedBackendOrigin = z.literal('http://127.0.0.1:3011');
 const commandBodyLimit = 4096;
 const attemptFailureBodyLimit = 16 * 1024; // Allow a 2,000-character reason with JSON escapes.
 const finishBodyLimit = 32 * 1024 * 1024; // Base64 for 20 MiB of photos, plus line notes and signatures.
@@ -22,6 +23,15 @@ function endpoint(method: string, segments: string[]): CrewEndpoint | undefined 
     if (method === 'POST' && (key === 'login' || key === 'logout')) {
       return { path: `/api/crew/auth/${key}`, bodyLimit: commandBodyLimit };
     }
+  }
+  if (resource === 'routes') {
+    if (method === 'GET' && segments.length === 1) return { path: '/api/crew/routes' };
+    if (!z.uuid().safeParse(key).success) return undefined;
+    if (method === 'GET' && segments.length === 2) return { path: `/api/crew/routes/${key}` };
+    if (method === 'POST' && segments.length === 3 && ['depart', 'returning', 'return'].includes(action ?? '')) {
+      return { path: `/api/crew/routes/${key}/${action}`, bodyLimit: attemptFailureBodyLimit };
+    }
+    return undefined;
   }
   if (resource !== 'visits') return undefined;
   if (method === 'GET' && segments.length === 1) return { path: '/api/crew/visits' };
@@ -74,7 +84,10 @@ async function readJsonBody(request: Request, maxBodyBytes: number): Promise<str
 export async function proxyCrewRequest(request: Request, segments: string[]): Promise<Response> {
   const target = endpoint(request.method, segments);
   if (!target) return problem(404, 'Crew endpoint not found.');
-  const base = backendOrigin.safeParse(process.env.CREW_API_ORIGIN ?? 'http://127.0.0.1:3001');
+  const configuredOrigin = process.env.CREW_API_ORIGIN ?? 'http://127.0.0.1:3001';
+  const base = process.env.BACKOFFICE_TEST === '1'
+    ? z.union([backendOrigin, isolatedBackendOrigin]).safeParse(configuredOrigin)
+    : backendOrigin.safeParse(configuredOrigin);
   if (!base.success) return problem(503, 'Crew API is unavailable.');
 
   const headers = new Headers({ Accept: target.document ? '*/*' : 'application/json' });

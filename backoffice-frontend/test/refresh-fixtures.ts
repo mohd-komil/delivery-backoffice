@@ -99,6 +99,7 @@ export class ApiFixture {
     if (call.pathname === '/templates') return Response.json(this.templates);
     if (call.pathname === '/routes/publication-capability') return Response.json({ enabled: false, reason: 'Lifecycle controls are not enabled on this stand' });
     if (/^\/routes\/[0-9a-f-]+\/publication$/u.test(call.pathname)) return Response.json(null);
+    if (/^\/routes\/[0-9a-f-]+\/operations$/u.test(call.pathname)) return Response.json({ message: 'Not found' }, { status: 404 });
     if (call.pathname === '/participants') return Response.json(this.participants);
     if (call.pathname === '/skills') return Response.json(this.skills);
     if (call.pathname === '/vehicles') return Response.json(this.vehicles);

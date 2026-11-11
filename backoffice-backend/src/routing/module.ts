@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Inject, Module, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, Inject, Module, Param, Patch, Post, Query, Req, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { IdSchema } from '../domain/model';
 import { actor } from '../identity/identity';
 import { OperationsModule } from '../operations/module';
@@ -11,6 +12,8 @@ import { GoogleRoads } from './google-maps';
 import { RouteDrafts } from './service';
 import { DeliveryMap } from './delivery-map';
 import { RoutePublication } from './publication';
+import { RouteLifecycle } from './lifecycle';
+import { CrewRoutesController, RouteLifecycleController } from './lifecycle-controller';
 
 @Controller('routes')
 class RouteController {
@@ -30,7 +33,10 @@ class RouteController {
   publicationCapability() { return this.publication.capability(); }
 
   @Get(':id/publication')
-  published(@Param('id') id: string) { return this.publication.get(IdSchema.parse(id).toLowerCase()); }
+  async published(@Param('id') id: string, @Res() response: Response<unknown>) {
+    // Nest's default null reply is an empty 200; this endpoint promises a JSON nullable document.
+    response.status(200).json(await this.publication.get(IdSchema.parse(id).toLowerCase()));
+  }
 
   @Post(':id/publication-review')
   @HttpCode(200)
@@ -79,8 +85,8 @@ class RouteController {
 
 @Module({
   imports: [OperationsModule],
-  controllers: [RouteController, EntranceController, AddressSuggestionController],
-  providers: [RouteDrafts, RoutePublication, GoogleRoads, DestinationEntrances, GoogleGeocoder, DeliveryMap],
+  controllers: [RouteLifecycleController, CrewRoutesController, RouteController, EntranceController, AddressSuggestionController],
+  providers: [RouteDrafts, RoutePublication, RouteLifecycle, GoogleRoads, DestinationEntrances, GoogleGeocoder, DeliveryMap],
   exports: [DeliveryMap],
 })
 export class RoutingModule {}

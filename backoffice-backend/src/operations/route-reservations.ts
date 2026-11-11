@@ -70,19 +70,36 @@ export async function assertRouteSkillsRetained(manager: EntityManager, removedS
 }
 
 /** The planned return is never proof that a resource has physically returned. */
+export async function routeResourceStartBlocker(manager: EntityManager, resources: readonly string[], ownRouteId: string | null, bufferMinutes = 0) {
+  const [busy] = await rows(manager, z.object({ id: IdSchema, status: z.enum(['in_progress', 'returning', 'returned', 'closed']) }),
+    `SELECT p.id,p.status FROM route_reservation r JOIN route_publication p ON p.id=r.route_id
+       WHERE r.resource=ANY($1::text[]) AND p.id IS DISTINCT FROM $2::uuid
+         AND (p.status IN ('in_progress','returning') OR
+           p.status IN ('returned','closed') AND r.ends_at + make_interval(mins=>GREATEST(r.buffer_minutes,$3::integer)) > $4::timestamptz)
+       ORDER BY CASE WHEN p.status IN ('in_progress','returning') THEN 0 ELSE 1 END,p.id LIMIT 1`,
+    [resources, ownRouteId, bufferMinutes, new Date().toISOString()]);
+  if (!busy) return null;
+  return busy.status === 'returned' || busy.status === 'closed'
+    ? { code: 'ROUTE_TURNAROUND_REQUIRED', message: 'The turnaround buffer after the previous actual return has not elapsed.', routeId: busy.id }
+    : { code: 'ROUTE_RETURN_REQUIRED', message: 'A previous route using these resources has not recorded its actual return.', routeId: busy.id };
+}
+
 export async function routeVisitStartBlocker(manager: EntityManager, appointmentId: string) {
   const own = await appointmentRoute(manager, appointmentId);
   if (own && own.status !== 'in_progress') return { code: 'ROUTE_DEPARTURE_REQUIRED', message: 'The published route must depart before starting this visit.', routeId: own.id };
-  const [busy] = await rows(manager, z.object({ id: IdSchema }),
-    `WITH wanted AS (
-       SELECT resource FROM reservation WHERE appointment_id=$1
-       UNION SELECT resource FROM transport_reservation WHERE appointment_id=$1
-       UNION SELECT r.resource FROM route_reservation r WHERE r.route_id=$2::uuid
-     ) SELECT p.id FROM route_reservation r JOIN route_publication p ON p.id=r.route_id
-       JOIN wanted w ON w.resource=r.resource
-       WHERE p.status IN ('in_progress','returning') AND p.id IS DISTINCT FROM $2::uuid
-       ORDER BY p.id LIMIT 1`, [appointmentId, own?.id ?? null]);
-  return busy ? { code: 'ROUTE_RETURN_REQUIRED', message: 'A previous route using these resources has not recorded its actual return.', routeId: busy.id } : null;
+  if (own) {
+    const [next] = await rows(manager, z.object({ appointmentId: IdSchema }),
+      `SELECT s.appointment_id AS "appointmentId" FROM route_stop s JOIN appointment a ON a.id=s.appointment_id
+       WHERE s.route_id=$1 AND s.active AND a.status IN ('booked','in_progress') ORDER BY s.sequence,s.id LIMIT 1`, [own.id]);
+    if (next?.appointmentId !== appointmentId) return { code: 'ROUTE_STOP_ORDER_REQUIRED', message: 'Finish or ask the dispatcher to skip the preceding stop before starting this visit.', routeId: own.id };
+  }
+  const resources = await rows(manager, z.object({ resource: z.string() }),
+    `SELECT resource FROM reservation WHERE appointment_id=$1
+     UNION SELECT resource FROM transport_reservation WHERE appointment_id=$1
+     UNION SELECT resource FROM route_reservation WHERE route_id=$2::uuid`, [appointmentId, own?.id ?? null]);
+  const [buffer] = own ? await rows(manager, z.object({ minutes: z.number().int().nonnegative() }),
+    'SELECT max(buffer_minutes)::int AS minutes FROM route_reservation WHERE route_id=$1', [own.id]) : [];
+  return routeResourceStartBlocker(manager, resources.map(({ resource }) => resource), own?.id ?? null, buffer?.minutes ?? 0);
 }
 
 export async function assertRouteVisitStartAllowed(manager: EntityManager, appointmentId: string): Promise<void> {

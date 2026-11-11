@@ -1,4 +1,5 @@
 import type { Locale } from './config';
+import { routeMessages } from './route-messages';
 
 const en = {
   brand: 'MOHD Crew',
@@ -957,5 +958,5 @@ const uz: Messages = {
 const translations: Record<Locale, Messages> = { en, it, ru, uz };
 
 export function messagesForLocale(locale: Locale) {
-  return { crew: translations[locale] };
+  return { crew: translations[locale], routes: routeMessages[locale] };
 }

@@ -112,7 +112,7 @@ function sameContext(left: RoutePointContext, right: RoutePointContext | undefin
     && left.point?.latitude === right.point?.latitude && left.point?.longitude === right.point?.longitude;
 }
 
-function normalize(input: RouteDraftInput): RouteDraftInput {
+export function normalizeRouteDraftInput(input: RouteDraftInput): RouteDraftInput {
   return RouteDraftInputSchema.parse({
     ...input,
     departAt: new Date(input.departAt).toISOString(),
@@ -146,9 +146,13 @@ export class RouteDrafts {
 
   async list() {
     const drafts = await rows(this.store.db.source.manager, DraftSummaryRowSchema,
-      `SELECT id, version, updated_at AS "updatedAt", data->>'name' AS name,
-      data->>'departAt' AS "departAt", jsonb_array_length(data->'stops') AS "stopCount"
-      FROM route_draft ORDER BY updated_at DESC, id LIMIT 100`);
+      `SELECT d.id,d.version,COALESCE(revision.at,p.created_at,d.updated_at) AS "updatedAt",
+      COALESCE(p.data->'draft',d.data)->>'name' AS name,
+      COALESCE(p.data->'draft',d.data)->>'departAt' AS "departAt",
+      jsonb_array_length(COALESCE(p.data->'draft',d.data)->'stops') AS "stopCount"
+      FROM route_draft d LEFT JOIN route_publication p ON p.id=d.id
+      LEFT JOIN LATERAL (SELECT max(at) AS at FROM route_revision WHERE route_id=d.id) revision ON true
+      ORDER BY "updatedAt" DESC,d.id LIMIT 100`);
     return {
       drafts: drafts.map((draft) => ({ ...draft, updatedAt: draft.updatedAt.toISOString() })),
       points: routeDepots, googleMaps: this.googleRoads.browserConfig, roadRoutingEnabled: this.googleRoads.configured,
@@ -186,16 +190,16 @@ export class RouteDrafts {
   }
 
   async preview(input: RouteDraftInput, useGoogleRoads = false) {
-    return this.store.db.source.transaction('REPEATABLE READ', (manager) => this.evaluate(normalize(input), manager, true, useGoogleRoads));
+    return this.store.db.source.transaction('REPEATABLE READ', (manager) => this.evaluate(normalizeRouteDraftInput(input), manager, true, useGoogleRoads));
   }
 
   /** The caller owns the transaction; projected visits freeze exact publication work without writing it. */
-  preparePublication(input: RouteDraftInput, manager: EntityManager, deliveries: Delivery[]) {
-    return this.prepare(normalize(input), manager, true, false, deliveries);
+  preparePublication(input: RouteDraftInput, manager: EntityManager, deliveries: Delivery[], ownRouteId?: string) {
+    return this.prepare(normalizeRouteDraftInput(input), manager, true, false, deliveries, ownRouteId);
   }
 
   async suggest(input: RouteDraftInput, objective: 'travel_minutes' | 'return_time') {
-    const command = normalize(input);
+    const command = normalizeRouteDraftInput(input);
     return this.store.db.source.transaction('REPEATABLE READ', async (manager) => {
       const prepared = await this.prepare(command, manager, true);
       return suggestRouteOrder(command, objective, prepared);
@@ -203,7 +207,7 @@ export class RouteDrafts {
   }
 
   async create(requestId: string, input: RouteDraftInput, principal: OperatorActor) {
-    const command = normalize(input);
+    const command = normalizeRouteDraftInput(input);
     // Preserve idempotent retries for existing drafts written before the additive opt-in field.
     const { useLocalEstimates, ...legacyCommand } = command;
     const fingerprint = createHash('sha256').update(JSON.stringify(useLocalEstimates ? command : legacyCommand)).digest('hex');
@@ -226,7 +230,7 @@ export class RouteDrafts {
   }
 
   async update(id: string, version: number, input: RouteDraftInput, principal: OperatorActor) {
-    const command = normalize(input);
+    const command = normalizeRouteDraftInput(input);
     return this.store.db.source.transaction(async (manager) => {
       await manager.query('SELECT pg_advisory_xact_lock(7041001)');
       const existing = await this.find(manager, id);
@@ -272,7 +276,7 @@ export class RouteDrafts {
     return (await this.prepare(input, manager, validate, useGoogleRoads)).preview;
   }
 
-  private async prepare(input: RouteDraftInput, manager: EntityManager, validate: boolean, useGoogleRoads = false, projectedDeliveries?: Delivery[]) {
+  private async prepare(input: RouteDraftInput, manager: EntityManager, validate: boolean, useGoogleRoads = false, projectedDeliveries?: Delivery[], ownRouteId?: string) {
     const chain = [input.startPointId, ...input.stops.map(({ deliveryId }) => deliveryId), input.endPointId];
     const nodes = new Set(chain);
     if (!depotIds.has(input.startPointId) || !depotIds.has(input.endPointId)) {
@@ -331,6 +335,7 @@ export class RouteDrafts {
     ];
     const timeline = calculateRouteTimeline({ ...input, stops, travelEstimates });
     const resources = await this.resources(manager, input);
+    if (ownRouteId) resources.busy = resources.busy.filter(({ routeId }) => routeId !== ownRouteId);
     const extraFindings: RouteFinding[] = warnings.map(({ code, fromPointId, toPointId }) => ({ severity: 'unknown', code, message: `Review travel estimate ${fromPointId} → ${toPointId}; its address context is missing or changed.` }));
     const pointContexts = [...contexts].map(([pointId, context]) => ({ pointId, ...context }));
     const preview = {

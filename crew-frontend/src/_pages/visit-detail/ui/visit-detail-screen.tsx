@@ -7,6 +7,7 @@ import { getVisit } from '@/shared/api/client';
 import type { VisitDetail } from '@/shared/api/contracts';
 import { useCrewResource } from '@/shared/api/use-resource';
 import { formatLocale } from '@/shared/i18n/config';
+import { routeBlockerLabel } from '@/shared/lib/route-display';
 import { destinationLabel, formatVisitDate, formatVisitWindow } from '@/shared/lib/visit-display';
 import { Button } from '@/shared/ui/button';
 import { Loading, Notice } from '@/shared/ui/feedback';
@@ -31,6 +32,7 @@ function Section({ title, icon, children }: { title: string; icon: 'pin' | 'user
 
 function CustomerConfirmation({ visit, actions }: { visit: VisitDetail; actions: VisitActions }) {
   const t = useTranslations('crew');
+  const routeText = useTranslations('routes');
   const requestId = useRef<string | null>(null);
   if (visit.status !== 'booked') return null;
   const confirmed = visit.confirmationStatus === 'customer_confirmed';
@@ -46,7 +48,8 @@ function CustomerConfirmation({ visit, actions }: { visit: VisitDetail; actions:
     <div>
       <h2 id="confirmation-heading">{t('customerConfirmation')}</h2>
       <VisitStatus visit={visit} />
-      <p id="start-visit-reason">{confirmed ? t('confirmedDescription') : t('awaitingDescription')}</p>
+      <p id="start-visit-reason">{visit.routeStartBlocker ? routeText(routeBlockerLabel(visit.routeStartBlocker)) : confirmed ? t('confirmedDescription') : t('awaitingDescription')}</p>
+      {visit.route ? <Link href={`/routes/${visit.route.id}`} prefetch={false} className="button button-secondary">{routeText('routeLink', { name: visit.route.name })}<Icon name="arrowRight" size={16} /></Link> : null}
     </div>
     <div className="confirmation-action">
       <Button disabled={!confirmed || !visit.canStart || actions.busy !== null} aria-describedby="start-visit-reason" onClick={start}>
@@ -210,6 +213,7 @@ function VisitTasks({ visit, actions }: { visit: VisitDetail; actions: VisitActi
 
 function VisitContent({ visit, actions }: { visit: VisitDetail; actions: VisitActions }) {
   const t = useTranslations('crew');
+  const routeText = useTranslations('routes');
   const locale = useLocale();
 
   return <>
@@ -222,6 +226,9 @@ function VisitContent({ visit, actions }: { visit: VisitDetail; actions: VisitAc
       </div>
       {visit.status === 'booked' ? null : <VisitStatus visit={visit} />}
     </div>
+    {visit.route && visit.status !== 'booked' ? <Link href={`/routes/${visit.route.id}`} prefetch={false} className="button button-secondary justify-self-start">
+      <Icon name="truck" size={17} />{routeText('routeLink', { name: visit.route.name })}<Icon name="arrowRight" size={16} />
+    </Link> : null}
     {visit.status === 'booked' || visit.status === 'in_progress' ? <WorkScopeNotice reason={visit.scopeReviewReason} /> : null}
     <CustomerConfirmation visit={visit} actions={actions} />
     <div className="details-grid">

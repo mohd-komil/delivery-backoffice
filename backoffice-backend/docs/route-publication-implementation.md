@@ -63,7 +63,21 @@ npm run openapi
 
 The first broad run exposed the missing new migration on that pre-existing test schema. After applying only `RoutePublication1793701100000`, **243/243 backend tests passed**, with no failures or skips. The full run is recorded in ignored `.local/route-publication-full-tests.log`. The publication suite covers real authorization/default gate, separate same-SKU lines, explicit second-of-two attachment, replay, late database failure and complete rollback, conflicting publications, stale inputs, return-only resource conflicts, protected linked mutations, skill/resource changes and buffer arithmetic. Injected failure log messages are intentional negative tests.
 
-This is local verification, not customer acceptance. The main `delivery_backoffice` database and its user demo fixtures have not been migrated, reseeded or published by the task-06 browser harness. Subsequent focused checks and the browser result are recorded below when completed.
+After the final corrections, the focused publication suite passed **13/13 tests**. Its concurrent row-only writer regression commits an issue photo linkage while publication waits: the stale publication is rejected without partial writes, and a new review/retry preserves the photo. The suite also checks uppercase participant IDs against the resource protections. Browser acceptance exposed a null-response serialization problem; the controller now sends an explicit JSON `null` for an unpublished draft, with a real HTTP-body regression and published-review readback check. Backend typecheck, typed lint, build and OpenAPI generation passed; the broad run preceded these final focused corrections.
+
+This is local verification, not customer acceptance. The main `delivery_backoffice` database and its user demo fixtures have not been migrated, reseeded or published by the task-06 browser harness.
+
+### Chrome acceptance, 11 November 2026
+
+The authenticated isolated Backoffice published both demo routes through the interface: two new visits, and one explicitly attached confirmed visit plus a new stop. Refresh preserved exact quantities, tasks and responsible selections; it invalidated the old review/acknowledgement. Re-review and Publish succeeded. The readback is an immutable version 1 and labels customer confirmations as publication-time snapshots. The participant calendar visibly separates the whole-trip reservation from on-site visits. Same-SKU lines from distinct orders retained separate quantities.
+
+Independent read-only PostgreSQL verification in owned schema `route_publication_demo_4534ded9e60341caa058687204c6003d` found:
+
+- Routes `e7b5fc5a-12fa-42d0-be67-ba89ffc72961` and `d0301c44-912b-4638-8214-4b426ff1eb22`: both published version 1, two stops each, four appointments total, no duplicate visit.
+- Attached appointment `6672050a-a13b-493f-81e0-0cdd882f6f36` keeps all prior JSON fields, including work, assignments and customer confirmation. The only added field is the intended route transport allocation; its original snapshot remains in provenance.
+- Each route owns exactly three resources (crew, person/driver and vehicle), raw interval 13 November 08:00–09:08 UTC with a separately stored ten-minute buffer. Travel remains an estimate, not road-provider data.
+
+See the frontend's `docs/route-publication.md` for its checks and isolated launch instructions. These tests do not exercise physical phones, route departure/cancellation/actual return, customer acceptance or real Odoo.
 
 ## Isolated browser demonstration
 

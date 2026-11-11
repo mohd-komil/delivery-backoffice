@@ -225,3 +225,11 @@ Routes checks the selected remaining work, customer window meaning, actual parti
 Typecheck, typed lint and production build passed. The complete frontend suite passed 186 tests; five subsequently added readiness/resource regressions also passed. Chrome verified report/history, readiness release, document replacement, and route proposal/apply/undo. Physical-phone acceptance remains unverified: computer control stopped when it could not reliably determine Chrome's active URL. This is local verification, not customer acceptance.
 
 Run the existing Docker backend first, then `npm run build` and `npm start` in this project. Crew runs independently at http://127.0.0.1:3002; launch instructions remain in its README. Refresh keeps current form drafts while updating data. Screenshot: [product checks in History](docs/screenshots/operations-followup-history-20261111.png).
+
+## Route publication review
+
+Stage 06 UI, capability gate, exact work, Refresh behavior and verification: [route-publication.md](docs/route-publication.md).
+
+## Published route operations
+
+Stages 07–09 add live route status, reviewed amendments, cancellation, factual return, exact-line reconciliation, warehouse receipts and independent route closure. See [route-operations.md](docs/route-operations.md) for behavior, isolated launch instructions and Chrome verification.

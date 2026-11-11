@@ -3,7 +3,7 @@ import { AppointmentSchema, AssignmentSchema, IdSchema, InstantSchema, Responsib
 import { RouteDraftInputSchema, RouteTimelineSchema } from './contracts';
 import { RouteFeasibilitySchema } from './feasibility';
 
-const NormalId = IdSchema.transform((id) => id.toLowerCase());
+const NormalId = IdSchema.toLowerCase();
 const StopFields = { deliveryId: NormalId, responsibleParticipantId: NormalId };
 export const PublicationStopInputSchema = z.discriminatedUnion('mode', [
   z.object({ ...StopFields, mode: z.literal('create'), workLines: WorkLinesInputSchema,

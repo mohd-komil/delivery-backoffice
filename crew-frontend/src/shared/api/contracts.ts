@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { routeReferenceSchema } from './route-contracts';
 
 export const crewUserSchema = z.object({ id: z.uuid(), name: z.string(), role: z.literal('crew') });
 export const signedOutSchema = z.object({ ok: z.literal(true) });
@@ -33,6 +34,8 @@ const visitSchema = z.object({
   destination: destinationSchema,
   crews: z.array(crewSchema),
   vehicles: z.array(crewSchema.extend({ plate: z.string() })),
+  route: routeReferenceSchema.nullable().optional(),
+  routeStartBlocker: z.string().nullable().optional(),
 });
 
 export const visitsSchema = z.object({ visits: z.array(visitSchema) });

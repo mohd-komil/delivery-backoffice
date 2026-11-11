@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
@@ -15,6 +16,8 @@ import { ResourceError } from '@/shared/ui/resource-feedback';
 
 export function CrewWorkspace({ children }: { children: ReactNode }) {
   const t = useTranslations('crew');
+  const routeText = useTranslations('routes');
+  const pathname = usePathname();
   const { resource, refresh } = useCrewResource(getCrewUser);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -46,6 +49,16 @@ export function CrewWorkspace({ children }: { children: ReactNode }) {
         </div> : null}
       </div>
     </header>
+    {resource.state === 'ready' ? <nav aria-label={routeText('navigation')} className="mx-auto flex w-full max-w-[850px] flex-wrap gap-2 px-[clamp(16px,4vw,32px)] pt-4">
+      <Link href="/routes" prefetch={false} aria-current={pathname.startsWith('/routes') ? 'page' : undefined}
+        className={`button ${pathname.startsWith('/routes') ? 'button-primary' : 'button-secondary'}`}>
+        <Icon name="truck" size={17} />{routeText('myRoutes')}
+      </Link>
+      <Link href="/visits" prefetch={false} aria-current={pathname.startsWith('/visits') ? 'page' : undefined}
+        className={`button ${pathname.startsWith('/visits') ? 'button-primary' : 'button-secondary'}`}>
+        <Icon name="calendar" size={17} />{t('myVisits')}
+      </Link>
+    </nav> : null}
     <main id="main-content" tabIndex={-1} className="workspace-main">
       {resource.state === 'loading' ? <Loading>{t('loading')}</Loading> : null}
       {resource.state === 'error' ? <ResourceError status={resource.status} retry={refresh} /> : null}

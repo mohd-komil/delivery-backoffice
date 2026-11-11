@@ -34,7 +34,7 @@ export function RouteWindowFields({ value, onChange, initialWindow }: { value?: 
 }
 
 export function RouteResourceFields({ value, onChange, participants, crew }: {
-  value: RoutePlanning; onChange: (next: RoutePlanning) => void; participants: Participant[]; crew?: Crew;
+  value: RoutePlanning; onChange: (next: RoutePlanning) => void; participants: readonly Participant[]; crew?: Crew;
 }) {
   const t = useTranslations('routeChecks');
   function selectPeople(participantIds: string[]) {

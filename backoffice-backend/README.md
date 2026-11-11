@@ -1,5 +1,7 @@
 # Delivery Backoffice backend
 
+Этапы 07–09: опубликованные рейсы в Crew, выезд, изменение и отмена с историей, фактический возврат, разбор остатков и отдельная складская приёмка. Контракты, ограничения и запуск демо описаны в [route-lifecycle-implementation.md](docs/route-lifecycle-implementation.md). Закрытие рейса не закрывает Picking и не подтверждает приёмку товара складом автоматически.
+
 Participants, Crews and Task templates: [CRUD API, deletion rules and verification](docs/directory-crud.md).
 
 Услуги по позициям, выбор работ и количеств при Book appointment, резервы остатков и повторные визиты: [контракт и проверки](docs/visit-work-scope.md).
