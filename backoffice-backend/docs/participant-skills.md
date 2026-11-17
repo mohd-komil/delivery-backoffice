@@ -1,40 +1,40 @@
-# Навыки участников
+# Participant skills
 
-Требование пользователя от 2026-11-04: навыки назначаются **Participants**, а не бригадам. При переходе между командами навык остаётся у человека. Для задачи каждый фактически назначенный участник должен иметь все её обязательные навыки; суммарное покрытие разными людьми не заменяет это правило.
+The 2026-11-04 requirement assigns skills to **Participants**. Participants retain their skills when they move between crews. Every participant assigned to a task must have every skill required for that task.
 
-## Работа в backoffice
+## Backoffice workflow
 
-Раздел **Skills** расположен под **Delivery views**. Вкладка Skills содержит динамический справочник: название, описание, enabled/disabled. Вкладка Participant skills позволяет выбрать человека и сохранить его набор навыков одним действием. Те же навыки доступны в форме Participant. Admin и operator управляют каталогом Skills: создают, редактируют, включают/отключают и удаляют неиспользуемые навыки. Назначение навыков участникам также доступно Admin и operator.
+The **Skills** section is under **Delivery views**. The **Skills** tab shows the live catalogue with each skill's name, description, and enabled status. In **Participant skills**, select a person and save their skill set in one action. The same skills are available in the **Participant** form. Administrators and operators can create, edit, enable, or disable skills, delete unused entries, and assign skills to participants.
 
-В Task templates задаются обязательные навыки. При назначении визита и при изменении состава через Visit staffing проверяются выбранные люди, включая сотрудников из другой обычной бригады. Участник без нужного навыка недоступен для нового выбора с текстовой причиной. Уже выбранный конфликт можно снять, а сохранение блокируется до устранения конфликта. Backend повторяет проверку независимо от UI.
+Set required skills in **Task templates**. Assigning a visit or changing its roster in **Visit staffing** checks all selected participants, including people whose default crew is different. The interface explains why participants who lack a required skill are unavailable for selection. Remove a conflicting selection to enable saving. The backend verifies the requirements independently.
 
-Отключённый навык можно оставить в старом профиле/шаблоне или удалить из него, но нельзя выдать заново. Отключённый обязательный навык не считается выполненным требованием при новом назначении или изменении состава запланированного визита. Чтобы продолжить новое назначение, администратор должен исправить требования/навыки или снова включить навык.
+Existing profiles and templates can retain or remove a disabled skill. New skill assignments require an enabled skill. Disabled skills do not satisfy requirements for a new assignment or a staffing change to a planned visit. To proceed with a new assignment, an administrator must correct the skills or requirements, or enable the skill again.
 
-## Данные и история
+## Data and history
 
-- `skill` — отдельный каталог с UUID, версией, названием, описанием и состоянием. Обрезанное по краям название содержит 1–200 символов, необязательное описание — до 2000; индекс предотвращает дубли по `lower(name)`.
-- `participant_skill` связывает `person.id` с `skill.id`; составная первичная запись не допускает повторов, внешние ключи защищают ссылки.
-- `task_template.data.requiredSkillIds` — требования шаблона. Отсутствие поля в старых данных означает пустой набор; PATCH без поля сохраняет прежнее значение, `[]` очищает его явно.
-- Новые task snapshots содержат `requiredSkillsSnapshot` со всеми прошедшими проверку требованиями, новые person snapshots — `skillsSnapshot` только с включёнными навыками человека, UUID и названиями на момент фиксации. Последующие переименования и изменения профилей не переписывают эти сведения.
+- `skill` is a separate catalogue with a UUID, version, name, description, and status. The trimmed name must contain 1–200 characters. The optional description has a limit of 2,000 characters. An index on `lower(name)` prevents duplicates.
+- `participant_skill` links `person.id` to `skill.id`. A composite primary key prevents duplicates and foreign keys protect references.
+- `task_template.data.requiredSkillIds` stores the template's requirements. A missing field in older records represents an empty set. A PATCH that omits the field preserves its value. Sending `[]` clears it explicitly.
+- New task snapshots store all validated requirements in `requiredSkillsSnapshot`. New person snapshots store only the participant's enabled skills in `skillsSnapshot`, using their UUIDs and names at the time of capture. Later renames and profile changes do not rewrite these snapshots.
 
-В старые delivery JSON и подписанные результаты новые поля задним числом не вставляются. При изменении staffing используются требования сохранённой задачи визита, а не актуального шаблона. Старт, исполнение и перенос уже назначенного визита не проводят новую проверку навыков прежнего состава. Обычный состав бригады и ограничение одного default crew не меняются.
+Older delivery JSON and signed results keep their original fields. Staffing changes use the requirements of the saved visit task. Starting, executing, or rescheduling an assigned visit does not recheck the existing roster's skills. Participants can still belong to only one default crew.
 
-Изменения skills/participants/templates и планирования используют существующую транзакционную advisory lock. Устаревшие версии возвращают 409, а точный повтор уже зафиксированной команды не отменяется последующим изменением каталога. Отключение сохраняет записи. С 2026-11-13 admin или operator может удалить только неиспользуемый навык: текущая выдача участнику, требование шаблона (включая отключённый), доставка, сохранённый рейс или его историческая версия блокируют удаление с 409. Вместо удаления используется явное отключение; оно не переписывает выданные навыки, требования и snapshots. Обязательные навыки действующего опубликованного рейса нельзя отключить до пересмотра рейса.
+Updates to skills, participants, task templates, and planning share the existing transactional advisory lock. Stale versions return 409. Replaying a recorded command with the original payload returns its saved result, even after catalogue changes. Disabling a skill preserves its records, assignments, requirements, and snapshots. As of 2026-11-13, an administrator or operator can delete only an unused skill. A current participant assignment, a template requirement (including a disabled template), a delivery, a saved route, or a historical route revision blocks deletion with 409. Review an active published route before disabling one of its required skills.
 
 ## HTTP API
 
-Действующая backoffice-сессия требуется для всех маршрутов, точный Origin — для изменений. Каталог Skills, выдача навыков участникам и изменение шаблонов доступны admin/operator:
+All endpoints require an active Backoffice session, and writes require the exact configured Origin. Administrators and operators can manage the skill catalogue, participant assignments, and task templates.
 
 - `GET /api/skills`, `GET /api/skills/:id`, `POST /api/skills`, `PATCH /api/skills/:id`.
-- `DELETE /api/skills/:id` (admin/operator) принимает строго `{ version }` и возвращает `{ id, deleted: true }`. Устаревшая версия/ссылки — 409, неизвестный или уже удалённый UUID — 404. Запись `skill.deleted` сохраняется в audit. API соответствует существующему удалению Participants/Crews/Task templates и не снимает связи автоматически.
-- `PATCH /api/participants/:id/skills` принимает `{ version, skillIds }` и меняет только навыки участника с повышением его версии.
-- Существующие POST/PATCH participants принимают необязательный `skillIds`; контакты, login и пароль сохраняют прежние правила. Узкий skills endpoint не меняет эти поля.
-- GET participants и availability визита возвращают `skillIds`; публичный профиль participant calendar остаётся без этого дополнительного поля.
-- Шаблоны возвращают `requiredSkillIds` массивом, включая `[]` у старых записей. PATCH шаблона допускает необязательный read-only `id` для существующих клиентов: он валидируется и должен совпадать с route UUID без учёта регистра. Запись всегда выбирается по URL; произвольные неизвестные поля по-прежнему запрещены.
+- `DELETE /api/skills/:id` (admin/operator) accepts exactly `{ version }` and returns `{ id, deleted: true }`. A stale version or existing reference returns 409. An unknown or already deleted UUID returns 404. The audit log retains `skill.deleted`. The endpoint follows the existing deletion behavior for participants, crews, and task templates and preserves associations.
+- `PATCH /api/participants/:id/skills` accepts `{ version, skillIds }`, updates only the participant's skills, and increments their version.
+- The existing participant POST/PATCH endpoints accept optional `skillIds`. Contact information, login, and password follow the existing rules. The skills-only endpoint leaves those fields intact.
+- The participant GET endpoint and visit availability return `skillIds`. The public participant calendar profile omits this field.
+- Templates return `requiredSkillIds` as an array, with `[]` for older records. Template PATCH accepts an optional read-only `id` for existing clients. The API validates it against the UUID in the URL, ignoring case. The URL always identifies the record. Unknown fields are rejected.
 
-## Миграция и проверки
+## Migration and verification
 
-`ParticipantSkills1793700300000` добавляет только каталог, связи, ограничения и индексы. Она не изменяет старые строки или JSON. Для работающего Docker-стенда перед основной миграцией применяется текущий согласованный Docker backup, а не сохранённый нативный snapshot.
+`ParticipantSkills1793700300000` adds the catalogue, associations, constraints, and indexes. Existing rows and JSON are preserved. Before migrating the running Docker environment, take a fresh, consistent Docker backup.
 
 ```powershell
 docker compose --profile importer stop backend importer
@@ -43,44 +43,44 @@ docker compose run --rm --no-deps tools npm run migrate
 docker compose --profile importer up -d --wait
 ```
 
-Операции проверяются последовательно; после ошибки нельзя продолжать к следующей команде. `docker-backup.ps1` проверяет точный Compose project/volume, остановленных писателей и отсутствие активных database clients; копирует три DB, globals, весь app-data и приватные recovery secrets. Manifest появляется только после сверки строк/sequences и точного содержимого файлов архива. Секреты и архивы игнорируются Git и не печатаются. Автоматического восстановления или удаления volumes нет.
+Check each operation before moving to the next command. `docker-backup.ps1` verifies the exact Compose project and volume, confirms writers have stopped and no database clients are active, and copies three databases, globals, all app-data, and private recovery secrets. It writes the manifest only after verifying rows, sequences, and the exact contents of the archived files. Git ignores the secrets and archives. The script keeps secrets and archives out of its output. Restore and volume removal are manual operations.
 
-## Выполненная миграция и проверки
+## Migration and verification results
 
-Перед main-миграцией остановлены писатели и создан свежий Docker backup `.local/backups/docker_20261104T125802Z_10dabf0b/docker-backup-manifest.json`. `ParticipantSkills1793700300000` применена к основной и тестовой базам, в каждой теперь четыре миграции. До рестарта `skill` и `participant_skill` пусты, sequence таблицы migrations продвинута ровно на одну запись. Независимый отчёт `independent-skills-migration-verification.json` рядом с manifest подтвердил прежние строки/историю, схему существующих таблиц, application/test/source DB, app-data и семь secret-файлов. Это сверка миграции перед учебными API-изменениями ниже; текущие выданные навыки не выдаются за пустой post-migration baseline. Нативный кластер не менялся и остановлен.
+Writers were stopped before the main migration, and a fresh Docker backup was created at `.local/backups/docker_20261104T125802Z_10dabf0b/docker-backup-manifest.json`. `ParticipantSkills1793700300000` was applied to the main and test databases, bringing each to four migrations. Before restart, `skill` and `participant_skill` were empty and the migrations table sequence had advanced by exactly one entry. The `independent-skills-migration-verification.json` report beside the manifest verified existing rows and history, the schemas of existing tables, the application, test, and source databases, app-data, and seven secret files. These results describe the baseline before the demo API operations below. The preserved native cluster is stopped.
 
-Docker backup helper, guards и фактический backup прошли проверки полного app-data tar и данных источника. Автоматического восстановления нет; свежий restore этого нового архива не выполнялся. Recovery secrets, credential manifests, дампы и private files остаются вне Git, значения не выводились.
+Checks of the Docker backup helper, its guards, and the resulting backup passed for the complete app-data tar archive and source data. Restore is manual, and a fresh restore of this archive was not performed. Recovery secrets, credential manifests, dumps, and private files are kept outside Git. Their contents were not printed.
 
-В Docker прошли **95/95 backend-тестов**, typecheck, полный typed lint и runtime/tools build. Полный набор включает настоящие guards, изолированную PostgreSQL, проверку EACH person / ALL requirements, staffing overrides, сохранённые требования задач, disabled/retained навыки, immutable snapshots, receipt replay, конкурирующие транзакции и миграцию без изменения старого JSON. Frontend прошёл typecheck, typed lint, **62/62 теста**, build и live read-only HTTP smoke **1/1 PASS**.
+Docker passed **95/95 backend tests**, typecheck, full typed lint, and the runtime and tools builds. The full suite covers real guards, isolated PostgreSQL, all skill requirements for each participant, staffing overrides, saved task requirements, disabled and retained skills, immutable snapshots, receipt replay, concurrent transactions, and preservation of old JSON during migration. The frontend passed typecheck, typed lint, **62/62 tests**, the build, and the live read-only HTTP smoke test (**1/1 PASS**).
 
-Backend test files выполняются последовательно (`--test-concurrency=1`): изолированные схемы в одной test DB всё ещё разделяют PostgreSQL advisory locks импортёра и планирования. Сами проверки конкурирующих транзакций внутри тестов сохраняются. Это предотвращает случайную конкуренцию разных тестовых файлов за намеренно глобальную блокировку, не меняя production locks или правила авторизации.
+Backend test files run sequentially (`--test-concurrency=1`) because isolated schemas in a single test database share the PostgreSQL advisory locks used by the importer and planning. Individual tests still cover concurrent transactions. This avoids unintended lock contention between test files while preserving production locks and authorization rules.
 
-Runtime/DB healthy; действующий importer читает 20 подходящих source pickings раз в 60 секунд. API опубликован на 127.0.0.1:3001, PostgreSQL на 55433, host frontend на 3000. Это учебная локальная модель; реальные клиентские квалификации и production deployment не проверялись.
+The runtime and database were healthy. The active importer read 20 eligible source pickings every 60 seconds. The API listens at 127.0.0.1:3001, PostgreSQL on port 55433, and the host frontend on port 3000. The checks used the local demo environment. Customer qualifications and production deployment were outside the verification scope.
 
-## Вымышленный каталог и повторяемый пример
+## Fictional catalogue and repeatable example
 
 ```powershell
 ./scripts/demo-skills.ps1
 ./scripts/demo-skills.ps1 -AssignSimoneExample
 ```
 
-Обычный запуск создаёт недостающий каталог из Product inspection, Quantity verification, Integrity inspection, Furniture assembly, Site cleanup и Packaging removal через настоящую admin HTTP-сессию. Найденные навыки не перезаписываются и не включаются молча. Опция `-AssignSimoneExample` выдаёт включённые навыки только человеку `394f4f47-b646-477c-8794-192a26d90c83` / Simone и дополняет требования известного `30000000-0000-4000-8000-000000000004` / Assemble навыком Furniture assembly. При отсутствии конкретных UUID или изменении назначения шаблона подмена другой записью запрещена.
+The regular run uses a real admin HTTP session to create missing catalogue entries for Product inspection, Quantity verification, Integrity inspection, Furniture assembly, Site cleanup, and Packaging removal. Existing entries retain their values and enabled status. `-AssignSimoneExample` assigns enabled skills only to `394f4f47-b646-477c-8794-192a26d90c83` (Simone) and adds Furniture assembly to the requirements of `30000000-0000-4000-8000-000000000004` (Assemble). The script refuses to substitute another record if a specified UUID is missing or the template assignment has changed.
 
-Для отдельного стенда с клиентской структурой Odoo (`http://127.0.0.1:3031`) используйте `./scripts/demo-skills.ps1 -CustomerDevelopment`. Скрипт проверяет целевой адрес и `sourceModel`, использует существующую admin-сессию и добавляет только отсутствующие учебные навыки. Набор теперь включает также Wall fixing и Fragile furniture handling (всего 8). Он не выдаёт навыки людям, не меняет существующие записи, визиты или Odoo. Опция несовместима с `-AssignSimoneExample`. Проверка 2026-11-13: первый запуск создал 8 навыков, повторный — 0; созданные записи являются примерами, а не подтверждёнными квалификациями сотрудников.
+For the separate Odoo customer-development environment (`http://127.0.0.1:3031`), run `./scripts/demo-skills.ps1 -CustomerDevelopment`. The script verifies the target URL and `sourceModel`, uses an existing admin session, and adds only missing demo skills. This set adds Wall fixing and Fragile furniture handling, for eight skills in total. Participant assignments, existing records, visits, and Odoo data are preserved. This option cannot be combined with `-AssignSimoneExample`. On 2026-11-13, the first run created eight fictional skill entries and the second created zero. The entries demonstrate the catalogue and do not verify anyone's qualifications.
 
-Первый проверенный запуск создал 6 навыков и выполнил 2 metadata updates; повторный — 0 созданий и 0 updates. Прежние визиты/снимки, default rosters, контакты, login и пароли не менялись. Несекретные отчёты сохраняются в игнорируемом `.local/skill-demo-runs`; обычный seed не выдаёт такие учебные квалификации.
+The first verified run created six skills and made two metadata updates. The second created and updated zero records. Existing visits, snapshots, default rosters, contact details, logins, and passwords were preserved. Non-sensitive run reports are stored in the ignored `.local/skill-demo-runs` directory. The regular seed leaves these demo qualifications unassigned.
 
-В браузере дополнительно создан седьмой Heavy lifting, затем Antonio Lombardo (`20000000-0000-4000-8000-000000000005`) сохранены Heavy lifting и Product inspection. Две badges подтвердили сохранение. Новый Skills расположен под Delivery views; Refresh сохранил Participant skills tab, поиск Antonio и фильтр Enabled. Это явные учебные записи, а не подтверждение квалификации реального человека.
+The browser check added a seventh entry, Heavy lifting, and assigned Heavy lifting and Product inspection to Antonio Lombardo (`20000000-0000-4000-8000-000000000005`). Two badges confirmed the assignments. Refresh in **Skills** under **Delivery views** preserved the **Participant skills** tab, the Antonio search, and the **Enabled** filter. These records are demo assignments.
 
-## Проверка CRUD 2026-11-13
+## CRUD verification 2026-11-13
 
-**Действующая политика после дополнительного запроса:** admin и operator также управляют Participants, Crews, Task templates и назначением навыков участникам. Профиль участника позволяет управлять только Crew-login/password, не пользователями Backoffice. Последний целевой набор прошёл 41/41 HTTP/PostgreSQL проверок; typecheck, typed lint, build и OpenAPI прошли. Подробности сохранения паролей, полей профиля и разграничения accounts — в [directory-crud.md](directory-crud.md#operator-permissions--13-november-2026).
+**Current policy after the follow-up request.** Administrators and operators can also manage participants, crews, task templates, and participant skill assignments. The participant profile manages only Crew login credentials. The latest targeted suite passed 41/41 HTTP/PostgreSQL checks, plus typecheck, typed lint, the build, and OpenAPI generation. See [directory-crud.md](directory-crud.md#operator-permissions--13-november-2026) for password preservation, profile fields, and account boundaries.
 
-Первое уточнение прав (историческая проверка, заменена действующей политикой выше): Francesca (`operator`) управляет каталогами Skills и Vehicles наравне с admin. Глобальные роли, sessions и Origin-проверки не изменены; выдача навыков участникам, Crews, Participants и Task templates остаются admin-only. Проверки с настоящей operator-сессией подтверждают создание, чтение, правку, отключение и удаление неиспользуемых записей, а также 409 для использованных записей и ресурсов действующего рейса. Crew и анонимный пользователь не получают доступ. После изменения прав полный целевой набор прошёл 40/40 проверок на изолированной PostgreSQL; build и OpenAPI прошли.
+At the first permissions checkpoint, Francesca (`operator`) could manage the Skills and Vehicles catalogues alongside administrators. Under that historical policy, only administrators could manage participant skill assignments, crews, participants, and task templates. The checkpoint preserved global roles, sessions, and Origin checks. Tests with a real operator session verified creation, reading, editing, disabling, and deletion of unused entries. They also verified 409 responses for entries in use and resources on an active route. Crew and anonymous requests were denied. The targeted suite passed 40/40 isolated PostgreSQL checks, and the build and OpenAPI generation passed.
 
-Добавлены single-record GET и безопасный DELETE для Skills/Vehicles без миграции. `npm run typecheck`, `npm run lint` и `npm run build` прошли. Новый `test/catalogue-crud.test.ts` прошёл 7/7 проверок; регрессия Participants, Skills, Transport и OpenAPI — 32/32. Проверялись настоящие sessions/guards, чужой Origin, admin/operator/Crew, строгий input, устаревшие версии, ссылки на людей/шаблоны/рейсы, сохранность snapshots и гонки удаления с выдачей навыка, изменением/назначением машины.
+Single-record GET and guarded DELETE endpoints were added for Skills and Vehicles without a migration. `npm run typecheck`, `npm run lint`, and `npm run build` passed. The new `test/catalogue-crud.test.ts` suite passed 7/7 checks. The Participants, Skills, Transport, and OpenAPI regression suites passed 32/32. Tests used real sessions and authorization guards, an unexpected Origin, admin/operator/Crew roles, strict input validation, stale versions, people/template/route references, snapshot preservation, and races between deletion and skill assignment or vehicle updates and allocation.
 
-PostgreSQL-тесты выполнялись через Docker tools на `delivery_backoffice_test`, каждый сценарий создавал и удалял только собственную уникальную схему. Нативный host-запуск не подключился к остановленному `127.0.0.1:55432`, поэтому проверки перенесены в действующий Docker test target. Основная application DB и Odoo тестами не менялись. Команда из каталога backend:
+PostgreSQL tests ran through Docker tools against `delivery_backoffice_test`. Each scenario created and removed only its own unique schema. The native host instance at `127.0.0.1:55432` was stopped, so tests ran against the active Docker test target. The tests preserved the main application database and Odoo data. Run the following command from the backend directory.
 
 ```powershell
 docker compose --profile tools run --rm --no-deps -v "${PWD}/src:/app/src:ro" -v "${PWD}/test:/app/test:ro" tools npx tsx --test --test-concurrency=1 test/catalogue-crud.test.ts test/participants.test.ts test/skills.test.ts test/transport.test.ts test/route-lifecycle-openapi.test.ts

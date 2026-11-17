@@ -1,5 +1,5 @@
-# Delivery Crew: дизайн первой версии
+# Delivery Crew design system
 
-Мобильный интерфейс Geist с Tailwind и компонентами в стиле shadcn. Основной сценарий: вход → «Мои визиты» → карточка. Действия навигации и обновления расположены рядом с заголовком, время и статус видны на карточке списка. Список и карточка не повторяют плотные таблицы backoffice.
+The mobile interface uses Geist, Tailwind, and shadcn-style components. The core flow goes from sign-in to My visits and then to the visit details. Navigation and refresh actions sit near the heading. Visit cards show the time and status at a glance.
 
-Шрифт Geist Sans для текста, Geist Mono для идентификаторов и времени там, где нужна ровная ширина цифр. Нейтральные поверхности, читаемые границы, цветные статусы с текстовыми подписями. Тема светлая, тёмная или системная. Анимации учитывают системный выбор уменьшенного движения. Английский по умолчанию, также итальянский, русский и узбекский. Язык и тема независимы от backoffice.
+Geist Sans is used for text, and Geist Mono for identifiers and times that benefit from uniform character widths. The interface uses neutral surfaces, distinct borders, and text labels alongside status colors. Crew offers light, dark, and system themes. Animations respect the user's reduced-motion preference. English is the default language, with Italian, Russian, and Uzbek also available. Crew keeps its own language and appearance settings.

@@ -1,19 +1,25 @@
-# Delivery Backoffice — локальный стенд
+# Delivery Backoffice
 
-Самостоятельные соседние проекты без общего обязательного package workspace:
+Delivery planning and on-site operations for furniture delivery and installation. The project contains three independently installable applications.
 
-- [Backend: запуск, проверки, права, правила](backoffice-backend/README.md)
-- [Frontend: запуск и интерфейс](backoffice-frontend/README.md)
-- [Crew frontend: мобильный PWA, запуск и вход](crew-frontend/README.md)
-- [План Notion v0.2](https://app.notion.com/p/40c4433fac0f815ab7e5fb9257f22047)
-- [Подтверждённое состояние реализации](backoffice-backend/docs/STATUS.md)
-- [Источник и ожидаемые SQL-результаты](backoffice-backend/docs/source-model.md)
-- [Машины и транспорт визита](backoffice-backend/docs/vehicles.md)
-- [Объёмы работ по позиции и демо с двумя визитами](backoffice-backend/docs/required-work.md)
-- [Отказ клиента от подписи и проверка диспетчером](backoffice-backend/docs/signature-refusal.md)
-- [Резервное копирование и восстановление](backoffice-backend/docs/recovery.md)
+- [Backend setup, verification, and access rules](backoffice-backend/README.md) — NestJS, TypeORM, and PostgreSQL
+- [Backoffice setup and interface](backoffice-frontend/README.md) — Next.js dispatch workspace
+- [Crew setup and sign-in](crew-frontend/README.md) — Next.js mobile PWA for assigned visits and routes
+- [Development plan in Notion](https://app.notion.com/p/40c4433fac0f815ab7e5fb9257f22047)
+- [Verified implementation status](backoffice-backend/docs/STATUS.md)
+- [Source model and expected SQL results](backoffice-backend/docs/source-model.md)
+- [Vehicles and visit transport](backoffice-backend/docs/vehicles.md)
+- [Product-line work quantities and two-visit demo](backoffice-backend/docs/required-work.md)
+- [Customer signature refusal and dispatcher review](backoffice-backend/docs/signature-refusal.md)
+- [Backup and recovery](backoffice-backend/docs/recovery.md)
 
-Основной backend-стенд запускается через Docker Compose: [инструкция Docker](backoffice-backend/docs/docker.md). PostgreSQL, backend, миграции и команды импорта/тестирования работают в контейнерах, данные и приватные файлы — в named volumes. Существующие данные перенесены; seed повторно не нужен. Нативный кластер сохранён отдельно для возврата. Frontend запускается из своего каталога на хосте. Интерфейс: http://127.0.0.1:3000, API: http://127.0.0.1:3001/api; PostgreSQL в Docker для SQL-клиентов: `127.0.0.1:55433`.
+## Local environment
 
-Пароли сгенерированы локально в игнорируемых `backoffice-backend/.local/demo-accounts.json` и `backoffice-backend/.local/participant-demo-accounts.json`. Не публикуйте `.env` и `.local`. Fake Odoo содержит только синтетические данные; совместимость с базой клиента не проверялась. Первый этап crew frontend работает локально на [127.0.0.1:3002](http://127.0.0.1:3002); production deployment вне текущего этапа.
+The [Docker Compose runbook](backoffice-backend/docs/docker.md) covers PostgreSQL, the API, migrations, and the import and test commands. Named volumes store the application data and private files. The original native PostgreSQL cluster was retained for rollback when the existing development data moved into Docker. Run each frontend from its own directory on the host.
 
+| Environment | Backoffice | API | Crew |
+| --- | --- | --- | --- |
+| Local synthetic-data stack | [3000](http://127.0.0.1:3000) | [3001](http://127.0.0.1:3001/api) | [3002](http://127.0.0.1:3002) |
+| Odoo customer-development copy | [3030](http://127.0.0.1:3030) | [3031](http://127.0.0.1:3031/api) | [3032](http://127.0.0.1:3032) |
+
+The synthetic stack's Docker PostgreSQL endpoint for SQL clients is `127.0.0.1:55433`. Keep `.env` and `.local` files private. The local setup generates demonstration credentials in `backoffice-backend/.local/demo-accounts.json` and `backoffice-backend/.local/participant-demo-accounts.json`. The [Odoo integration runbook](backoffice-backend/docs/odoo-integration.md) covers the separate, read-only development copy.

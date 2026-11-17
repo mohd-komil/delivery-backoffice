@@ -1,39 +1,39 @@
-# Учебные данные для MVP
+# MVP demo data
 
-Набор создаёт три адресные доставки из двух синтетических Picking в `delivery_backoffice_test`. Две доставки первого Picking имеют одинаковую ссылку на Picking и разные адреса и заказы. Во всех трёх доставках встречается `MVP-CHAIR` с одним `productId`. Каждая строка имеет собственный `sourceLineId` и заказ. Адреса и телефоны вымышленные.
+The dataset creates three address-level deliveries from two synthetic pickings in `delivery_backoffice_test`. The two deliveries from the first picking share its reference and have distinct addresses and orders. All three deliveries include `MVP-CHAIR` with the same `productId`. Each line has its own `sourceLineId` and order. Addresses and phone numbers are fictional.
 
-Из каталога backend на настроенном Docker-стенде:
+Run these commands from the backend directory with the Docker environment configured.
 
 ```powershell
 docker compose --profile tools run --rm --build tools npm run migrate -- --test
 docker compose --profile tools run --rm tools npm run demo:pilot -- --test
 ```
 
-Скрипт проверяет имя подключённой базы и создаёт только отсутствующие записи источника `mvp_demo`. Второй запуск выводит `Inserted 0 of 3`. Данные и история уже созданной доставки сохраняются. Штатный импорт `odoo_mock` работает со своим источником.
+The script verifies the connected database name and creates only missing `mvp_demo` source records. The second run prints `Inserted 0 of 3`. Existing delivery data and history are preserved. The regular `odoo_mock` import uses its own source.
 
-| Picking | Адрес | Строки и услуги |
+| Picking | Address | Lines and services |
 | --- | --- | --- |
-| `DEMO/MVP/0001` | `Via DEMO Alfa 1`, Milano | `910011` — два стула с установкой. `910021` — такой же стул из другого заказа, только доставка. `910022` — один шкаф, только установка. |
-| `DEMO/MVP/0001` | `Via DEMO Beta 2`, Sesto San Giovanni | `910031` — один стул, только забор. |
-| `DEMO/MVP/0002` | `Via DEMO Gamma 3`, Monza | `910041` — один стул, только доставка. |
+| `DEMO/MVP/0001` | `Via DEMO Alfa 1`, Milano | `910011` covers two chairs with installation. `910021` covers delivery of the same chair from a different order. `910022` covers installation of one cabinet. |
+| `DEMO/MVP/0001` | `Via DEMO Beta 2`, Sesto San Giovanni | `910031` covers collection of one chair. |
+| `DEMO/MVP/0002` | `Via DEMO Gamma 3`, Monza | `910041` covers delivery of one chair. |
 
-В тестовом приложении назначьте и подтвердите визит к первому адресу, затем зафиксируйте передачу одного стула по строке `910011`. По этой строке должен остаться один стул к доставке и два к установке. Строка `910021` сохраняет один стул к доставке. На отдельном визите можно записать только установку шкафа по `910022`. На втором адресе забор по `910031` учитывается отдельно от доставки. Строка `910041` другого Picking остаётся открытой.
+In the test application, assign and confirm a visit to the first address, then record the delivery of one chair on line `910011`. The remaining work for that line should be one chair to deliver and two to install. Line `910021` still has one chair to deliver. A separate visit can record installation of the cabinet on `910022` without any delivery. At the second address, collection on `910031` is tracked separately from delivery. Line `910041` in the other picking stays open.
 
-В Backoffice на вкладке **Items** можно выбрать услугу по умолчанию и переопределить её для строки. Пока визит начат, план зафиксирован. После завершения визита смена общего значения сохраняет услуги уже обработанных строк. **Documents & evidence** позволяет прикрепить файл ко всей доставке или к строке. Crew показывает документы для назначенного адреса и раздельные остатки операций. Для строки с доставкой и сборкой количество сборок ограничено числом доставленных изделий, включая изделия, переданные в текущем визите.
+In Backoffice, the **Items** tab allows you to choose a default service and override it per line. The plan is locked while a visit is in progress. Once the visit ends, changing the default preserves the services recorded for processed lines. **Documents & evidence** lets you attach a file to a delivery or an individual line. Crew shows documents for the assigned address and remaining quantities by operation. For a line with delivery and assembly, the assembly quantity is limited to the number of items delivered, including items handed over during the current visit.
 
-В Crew откройте **Finish visit → Product check** у нужной строки. Выберите **OK** или **Problem** и при необходимости добавьте заметку до 500 символов. В **Completion photos** выберите строку по заказу и номеру, затем снимите или загрузите фото. Можно также добавить общие фото визита. Отметки, заметки и привязка фото сохраняются при отправке подписанного отчёта. В Backoffice откройте **History → Product checks**. Для учебной проверки отметьте стул `910011` как исправный, а стул `910021` как проблемный и прикрепите разные фото. В истории у каждого должны отображаться свои заказ, отметка, заметка и снимок.
+In Crew, open **Finish visit → Product check** for the relevant line. Choose **OK** or **Problem** and, if needed, add a note of up to 500 characters. In **Completion photos**, select the line by order and line number, then take or upload a photo. You can also attach photos to the visit as a whole. Submitting the signed report preserves the check results, notes, and photo associations. In Backoffice, open **History → Product checks**. To verify the workflow, mark chair `910011` as OK and chair `910021` as Problem, and attach a different photo to each. The history should show each line's order, check result, note, and photo.
 
-## Черновик многоадресного рейса
+## Multi-stop route draft
 
-Для этой проверки заполните новую тестовую схему. Учебные точки A `45.4642, 9.1900`, B `45.5346, 9.2343` и C `45.5845, 9.2744` заданы для демонстрации поиска. Повторный seed сохраняет ранее созданные доставки.
+Seed a new test schema for this check. Demo points A `45.4642, 9.1900`, B `45.5346, 9.2343`, and C `45.5845, 9.2744` illustrate the nearby search. Running the seed again preserves existing deliveries.
 
-1. После частичной доставки на A проверьте доступный остаток строки `910011`. Должны остаться один стул к доставке и два к установке.
-2. В **Routes** добавьте A. Поиск в пределах 10 км от A покажет забор на B, примерно в 8,6 км. C находится примерно в 14,9 км и появится при радиусе 20 км.
-3. Добавьте C, чтобы в рейсе были работы из обоих Picking. Выберите учебный склад Milano для старта и финиша, отправление в 09:00 по Риму. Установите на A 40 минут, на C 35 минут. Учебные переезды 30, 20 и 25 минут дают ETA 09:30 и 10:30 и возврат в 11:30. Всего 150 минут.
-4. Переместите C перед A. Учебные переезды 42, 28 и 22 минуты дают ETA 09:42 и 10:45 и возврат в 11:47. Увеличьте работу на C до 45 минут. ETA на A станет 10:55, возврат — 11:57.
+1. After partial delivery at A, verify the available balance for line `910011`. One chair should remain for delivery and two for installation.
+2. Add A in **Routes**. Searching within 10 km of A shows the collection at B, about 8.6 km away. C is about 14.9 km away and appears with a 20 km radius.
+3. Add C to include work from both pickings. Select the Milano demo warehouse as both the start and end point, and set departure to 09:00 Rome time. Set on-site work to 40 minutes at A and 35 at C. The demo travel durations of 30, 20, and 25 minutes produce ETAs of 09:30 and 10:30, with a return at 11:30. The total is 150 minutes.
+4. Move C ahead of A. The demo travel durations of 42, 28, and 22 minutes produce ETAs of 09:42 and 10:45, with a return at 11:47. Increase on-site work at C to 45 minutes. The ETA at A becomes 10:55 and the return time becomes 11:57.
 
-Расстояния для поиска считаются по прямой. Время переездов в этом примере задано учебной матрицей.
+The nearby search uses straight-line distances. A demo matrix supplies the travel times in this example.
 
-Сквозную проверку можно запустить из backend командой `npx --no-install tsx --test test/crew-access.test.ts test/pilot-demo.test.ts` с настроенной тестовой PostgreSQL. Тесты сами создают и удаляют свои схемы. Они проходят от авторизованных команд планирования до подписанного результата и закрытия забора, а также проверяют доступ к инструкциям и повторное заполнение демо.
+With the test PostgreSQL instance configured, run `npx --no-install tsx --test test/crew-access.test.ts test/pilot-demo.test.ts` from the backend directory for an end-to-end check. The tests create and delete their own schemas. They cover authenticated planning commands, signed results, collection closure, access to instructions, and repeat demo seeding.
 
-Демо-учётные данные хранятся локально в `.local/demo-accounts.json` (поле `admin`) и `.local/participant-demo-accounts.json` (аккаунты Crew). Для визита нужен аккаунт участника, назначенного ответственным в Backoffice.
+Demo credentials are stored locally in `.local/demo-accounts.json` (the `admin` field) and `.local/participant-demo-accounts.json` (Crew accounts). Use the account of the participant assigned as responsible for the visit in Backoffice.

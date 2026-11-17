@@ -1,28 +1,28 @@
 # Delivery Backoffice backend
 
-Задачи 14, 16 и 17: [ранее выполненные работы](docs/prior-work.md), [сверка повторных импортов](docs/source-reconciliation.md) и [очередь решений диспетчера](docs/dispatcher-queue.md). [Общие справочники планирования](docs/planning-references.md) описывают смены/отсутствия, точки выезда и возврата, нормативы времени и их связь с Routes.
+Tasks 14, 16, and 17 cover [previously completed work](docs/prior-work.md), [repeat-import reconciliation](docs/source-reconciliation.md), and the [dispatcher decision queue](docs/dispatcher-queue.md). The [shared planning reference data](docs/planning-references.md) covers shifts and absences, departure and return locations, standard work times, and how they feed into Routes.
 
-13 ноября 2026: текущий стенд `delivery-odoo-customerdev` обновлён до 19 миграций. Backoffice — `http://127.0.0.1:3030`, API — `http://127.0.0.1:3031/api`. Все 790 доставок сохранены без изменения JSON; записи в Odoo и повторного внешнего импорта не было. Backend: 374/374 теста на изолированной PostgreSQL, strict typecheck, typed lint и build прошли. [Проверки интерфейса, резервная копия и команды перезапуска](docs/planning-references.md#final-verification-and-runtime--2026-11-13).
+November 13, 2026. The `delivery-odoo-customerdev` stack was upgraded to 19 migrations. Backoffice runs at `http://127.0.0.1:3030` and the API at `http://127.0.0.1:3031/api`. All 790 deliveries retained their original JSON. The upgrade made no writes or repeat imports against Odoo. Backend verification passed all 374 tests on isolated PostgreSQL, strict typecheck, typed lint, and build. [Interface checks, backup, and restart commands](docs/planning-references.md#final-verification-and-runtime--2026-11-13).
 
-Этап 10: [сквозная проверка двух Picking, частичной доставки, Customer absent, повторов и оставшейся работы](docs/stage10-acceptance.md). В документе — ожидаемые количества, результаты проверок, команды отдельного демо и незакрытые критерии полного этапа.
+Stage 10 covers the [end-to-end checks for two pickings, partial delivery, Customer absent, retries, and remaining work](docs/stage10-acceptance.md). The document records expected quantities, test results, commands for a separate demo, and the remaining acceptance criteria.
 
-12 ноября 2026: [восстановление свежей Docker-копии в отдельный стенд](docs/recovery.md#verified-docker-recovery--2026-11-12) проверено на текущих 13 миграциях. Три базы, файлы, подписанные отчёты и History восстановлены; основной стенд сохранён. Копия API: `http://127.0.0.1:3021/api/health`.
+November 12, 2026. The [restore of a fresh Docker backup to a separate stack](docs/recovery.md#verified-docker-recovery--2026-11-12) was verified against the 13 migrations applied at that time. The restore included all three databases, files, signed reports, and History. The main stack was preserved. The restored API health endpoint is `http://127.0.0.1:3021/api/health`.
 
-Этапы 07–09: опубликованные рейсы в Crew, выезд, изменение и отмена с историей, фактический возврат, разбор остатков и отдельная складская приёмка. Контракты, ограничения и запуск демо описаны в [route-lifecycle-implementation.md](docs/route-lifecycle-implementation.md). Закрытие рейса не закрывает Picking и не подтверждает приёмку товара складом автоматически.
+Stages 07–09 added published routes in Crew, departure, amendments and cancellation with history, actual return, outstanding-work review, and separate warehouse receipt. See the [contracts, limitations, and demo setup](docs/route-lifecycle-implementation.md). Route closure, picking closure, and warehouse receipt are separate actions.
 
 Participants, Crews and Task templates: [CRUD API, deletion rules and verification](docs/directory-crud.md).
 
-Услуги по позициям, выбор работ и количеств при Book appointment, резервы остатков и повторные визиты: [контракт и проверки](docs/visit-work-scope.md).
+Line-level services, work and quantity selection in Book appointment, reservations for outstanding work, and follow-up visits are covered in the [contract and verification](docs/visit-work-scope.md).
 
-Причины невыполненных работ Crew по позиции и операции, History и исправления: [контракт и проверки](docs/incomplete-work-reasons.md).
+Crew reasons for incomplete work by line and operation, History, and corrections are covered in the [contract and verification](docs/incomplete-work-reasons.md).
 
-Публикация Routes: [контракт задачи 05](docs/route-publication.md) и [реализация этапа 06, ограничения включения и тестовый запуск](docs/route-publication-implementation.md). Publish реализован и по умолчанию выключен до готовности действий выезда, отмены и фактического возврата.
+Route publication is described in the [Task 05 contract](docs/route-publication.md) and the [Stage 06 implementation, activation limits, and test setup](docs/route-publication-implementation.md). Publish is implemented and defaults to off until departure, cancellation, and actual return are available.
 
-Локальный учебный NestJS / TypeORM / PostgreSQL backend по [плану Notion v0.2](https://app.notion.com/p/40c4433fac0f815ab7e5fb9257f22047). Fake Odoo — синтетическая модель, не подтверждённая схема клиента.
+This local NestJS, TypeORM, and PostgreSQL demo backend follows the [Notion plan v0.2](https://app.notion.com/p/40c4433fac0f815ab7e5fb9257f22047). Fake Odoo uses a synthetic schema. The customer schema remains unverified.
 
-## Учебный стенд fake Odoo — Docker
+## Fake Odoo demo stack with Docker
 
-Backend и PostgreSQL с базами `delivery_backoffice`, `delivery_backoffice_test` и `odoo_mock` работают через Compose. Frontend запускается отдельно на хосте. Существующие данные уже перенесены; повторный seed для них не нужен.
+Compose runs the backend and PostgreSQL with the `delivery_backoffice`, `delivery_backoffice_test`, and `odoo_mock` databases. Start the frontend separately on the host. Data already transferred to this stack needs no further seeding.
 
 ```powershell
 ./scripts/docker-configure.ps1
@@ -30,11 +30,11 @@ docker compose --profile importer up -d --build
 docker compose ps -a
 ```
 
-API: `http://127.0.0.1:3001/api`, PostgreSQL для локальных SQL-клиентов: `127.0.0.1:55433`. База и приватные файлы находятся в named volumes. [Docker runbook](docs/docker.md) описывает перенос, отдельное создание нового стенда, команды тестирования, импорт и возврат к сохранённому нативному кластеру. Секреты в игнорируемом `.local/docker/secrets`, в образы не включаются. PostgreSQL и API опубликованы только на loopback.
+The API is at `http://127.0.0.1:3001/api`, and local SQL clients can reach PostgreSQL at `127.0.0.1:55433`. The database and private files use named volumes. The [Docker runbook](docs/docker.md) covers migration, fresh-stack setup, testing, imports, and returning to the saved native cluster. The ignored `.local/docker/secrets` directory holds secrets outside the images. PostgreSQL and the API bind their published ports to loopback only.
 
-## Альтернативный нативный запуск
+## Alternative native setup
 
-Требуются Node.js 24.11+ (проверено 26.13), npm, PostgreSQL 18 с бинарными файлами, PowerShell 7. Docker не требуется. Из этого каталога:
+This setup requires Node.js 24.11+ (verified on 26.13), npm, PostgreSQL 18 binaries, and PowerShell 7. Run these commands from this directory:
 
 ```powershell
 ./scripts/postgres-setup.ps1
@@ -45,15 +45,15 @@ npm run import
 npm run dev
 ```
 
-По умолчанию бинарные файлы PostgreSQL: `C:/Program Files/PostgreSQL/18/bin`. Другой путь: `./scripts/postgres-setup.ps1 -PostgresBin 'D:/PostgreSQL/18/bin'`. Отдельный кластер `.local/postgres` слушает `127.0.0.1:55432`; существующие службы не затрагиваются. Повторные setup/seed не удаляют данные. Host mode принимает только этот loopback port и именованные учебные базы. Явный `BACKOFFICE_RUNTIME=docker` принимает только `db:55432` внутри Compose; API в нём слушает `0.0.0.0:3001` за loopback port mapping. Одновременно нативный и Docker API на порту 3001 не запускать.
+The setup defaults to `C:/Program Files/PostgreSQL/18/bin` for the PostgreSQL binaries. To specify another path, run `./scripts/postgres-setup.ps1 -PostgresBin 'D:/PostgreSQL/18/bin'`. The separate `.local/postgres` cluster listens on `127.0.0.1:55432` alongside existing services. Repeating setup or seed preserves existing data. Host mode accepts only this loopback port and the named demo databases. With `BACKOFFICE_RUNTIME=docker`, the database connection must use `db:55432` inside Compose. The API listens on `0.0.0.0:3001` behind a loopback port mapping. Run only one of the native or Docker APIs on port 3001 at a time.
 
-API: [http://127.0.0.1:3001/api/health](http://127.0.0.1:3001/api/health). Frontend запускается отдельно из соседнего `backoffice-frontend` на `http://127.0.0.1:3000`. Используйте одинаковый host `127.0.0.1` для обоих проектов.
+Check the [API health endpoint](http://127.0.0.1:3001/api/health). Start the frontend from the adjacent `backoffice-frontend` directory at `http://127.0.0.1:3000`. Use `127.0.0.1` as the host for both projects.
 
-Учетные записи admin и Francesca/operator и случайные пароли находятся в **`.local/demo-accounts.json`**. Откройте этот локальный файл. Секреты PostgreSQL — `.local/postgres-credentials.json`; `.env` генерируется setup. Всё это исключено из Git, как и приватные файлы.
+Open **`.local/demo-accounts.json`** for the admin and Francesca operator accounts and their randomly generated passwords. PostgreSQL credentials are in `.local/postgres-credentials.json`, and setup generates `.env`. Git excludes these files and private attachments.
 
-Сборка: `npm run build`; запуск сборки: `npm start`. Импорт вручную: `npm run import` или кнопка Import в UI. Повторное сканирование каждые 60 секунд: `npm run import:watch` в отдельном терминале. Это полноценный источник PostgreSQL → app DB → HTTP → UI, без статических API mocks.
+Build with `npm run build` and start the build with `npm start`. Import manually with `npm run import` or the Import button in the UI. Run `npm run import:watch` in a separate terminal to rescan every 60 seconds. The UI reads through HTTP from the application database, which imports data from PostgreSQL.
 
-## Проверки и учебный сценарий
+## Verification and demo scenario
 
 ```powershell
 ./scripts/postgres-verify.ps1
@@ -67,49 +67,49 @@ npm run openapi
 npm run demo
 ```
 
-Тесты используют настоящую `delivery_backoffice_test`; importer tests дополнительно создают уникальные application/source схемы. Исходные source fixtures не меняются. В HTTP-тестах действуют настоящие auth/roles/Origin guards. Cleanup ограничен ресурсами конкретного теста.
+The tests use a real `delivery_backoffice_test` database. Importer tests also create unique application and source schemas. The source fixtures remain intact. HTTP tests use the actual authentication, role, and Origin guards. Cleanup touches only resources owned by each test.
 
-`npm run demo` проходит login, импорт, два визита, несколько crews, документ, crew-authored проблему и приватное DEMO-фото, частичное количество, return request, завершение оставшейся работы, DEMO-подписи, явное закрытие и повторный импорт. Результат виден в UI. Повтор завершённого сценария идемпотентен. Нет публичного crew endpoint или экрана симулятора.
+`npm run demo` covers sign-in, import, two visits, several crews, a document, a crew-reported issue and private DEMO photo, partial quantities, a return request, completion of the outstanding work, DEMO signatures, explicit closure, and a repeat import. The UI displays the result. Replaying the completed scenario is idempotent. The demo runs locally through the command line.
 
-OpenAPI генерируется в `docs/openapi.json` и доступен после входа через `GET /api/openapi.json`. Runtime-код/entities backend не импортируются frontend.
+OpenAPI is generated at `docs/openapi.json` and available after sign-in through `GET /api/openapi.json`. The frontend uses the HTTP contract independently of backend runtime code and entities.
 
-## Подтверждение времени визита клиентом
+## Customer confirmation of the visit time
 
-После назначения бригады визит ждёт согласия клиента. Admin или operator (включая Francesca) записывает его в карточке визита через `POST /api/deliveries/:id/appointments/:appointmentId/confirm-customer` с текущей версией доставки. Сервер сохраняет автора, время и событие в истории. До подтверждения общие доменные правила блокируют начало визита и запись результата. Перенос на другое время требует нового подтверждения; смена состава или транспорта в том же окне сохраняет его. Отмена освобождает ресурсы и оставляет подтверждение в истории. Запись хранится в JSONB визита, для самого подтверждения миграция не требуется.
+After crew assignment, the visit waits for customer confirmation. An admin or operator, including Francesca, records it in the visit card through `POST /api/deliveries/:id/appointments/:appointmentId/confirm-customer` using the current delivery version. The server records the actor, timestamp, and history event. Shared domain rules require confirmation before starting the visit or recording a result. Rescheduling requires a new confirmation. Changing staffing or transport in the same time window preserves confirmation. Cancellation releases resources and keeps the confirmation in history. The visit JSONB record stores the confirmation without a dedicated migration.
 
-Проверено: 113 backend-тестов на изолированной PostgreSQL, typecheck, typed lint, сборка Docker и учебный сценарий записи и отмены в Chrome.
+Verification covered 113 backend tests on isolated PostgreSQL, typecheck, typed lint, a Docker build, and a demo of recording confirmation and cancelling the visit in Chrome.
 
-## Crew frontend: персональный вход и чтение визитов
+## Crew frontend sign-in and visit access
 
-[Отдельный мобильный PWA](../crew-frontend/README.md) слушает `127.0.0.1:3002`. Его прокси пропускает только разрешённые методы `/api/crew`. Backend принимает точный `CREW_FRONTEND_ORIGIN`, по умолчанию `http://127.0.0.1:3002`. Сессия участника отдельная от сессии оператора. Хеш токена хранится в `crew_session`, смена логина, пароля или Enabled отзывает сессии. Список ограничен 200 записями, активные первыми, отменённые исключены. Карточка проверяет актуальное назначение по UUID и возвращает задачи тех бригад, с которыми человек работает на этом визите. Ответы приватные, без кэша.
+The [separate mobile PWA](../crew-frontend/README.md) listens on `127.0.0.1:3002`. Its proxy allows only the permitted `/api/crew` methods. The backend checks the exact `CREW_FRONTEND_ORIGIN`, which defaults to `http://127.0.0.1:3002`. Crew and operator sessions are separate. `crew_session` stores the token hash. Changing the login, password, or Enabled state revokes sessions. The list is limited to 200 visits, with active visits first and cancelled visits excluded. The visit card checks the current assignment by UUID and returns tasks for the crews the person works with on that visit. Responses are private and uncached.
 
-Миграция `CrewSession1793700500000` применена в локальной Docker-базе после сохранения архива PostgreSQL в `.local/backups/20261105T131948Z_crew-phase1/`. Основная и тестовая проверки используют разные БД. Прошли **119 backend-тестов**, включая HTTP с реальными guard и PostgreSQL, typecheck, typed lint, сборка и генерация OpenAPI. Importer обработал 20 fake pickings после перезапуска.
+The `CrewSession1793700500000` migration was applied to the local Docker database after a PostgreSQL backup in `.local/backups/20261105T131948Z_crew-phase1/`. Main and test verification use separate databases. Verification passed **119 backend tests**, including HTTP tests with real guards and PostgreSQL, typecheck, typed lint, build, and OpenAPI generation. The importer processed 20 fake pickings after restart.
 
-Во втором этапе `POST /api/crew/visits/:id/start` начинает подтверждённый визит. `PATCH /api/crew/visits/:id/checklist/:checklistId` сохраняет отметку своего назначения, а `POST /api/crew/visits/:id/issues` связывает проблему с одним приватным PNG или JPEG до 5 МиБ. Последние две команды требуют статуса `in_progress`. Команды используют версию доставки и `requestId`, проверяют сессию и назначение под блокировкой и записывают автора в аудит. Запись проблемы, метаданные фото и квитанция запроса коммитятся вместе. После ошибки незарегистрированный файл удаляется. При внезапной остановке процесса до коммита файл может остаться в приватном каталоге без доступной ссылки. Второй этап не требует миграции. Проверены **120 backend-тестов** на изолированной PostgreSQL, типизация, typed lint, Docker-сборка и OpenAPI.
+In phase two, `POST /api/crew/visits/:id/start` starts a confirmed visit. `PATCH /api/crew/visits/:id/checklist/:checklistId` records progress on the participant's assignment, and `POST /api/crew/visits/:id/issues` associates an issue with one private PNG or JPEG of up to 5 MiB. The last two commands require `in_progress` status. Commands use the delivery version and `requestId`, verify the session and assignment under a lock, and record the actor in the audit log. The issue, photo metadata, and command receipt commit together. An error removes the unregistered file. If the process stops before commit, the file can remain in a private directory without an accessible link. Phase two uses the existing schema. Verification covered **120 backend tests** on isolated PostgreSQL, typecheck, typed lint, the Docker build, and OpenAPI.
 
-В третьем этапе `PATCH /api/deliveries/:id/appointments/:appointmentId/responsible` позволяет оператору или администратору явно выбрать одного действующего участника из фактического состава. При снятии участника с забронированного визита выбор сбрасывается с записью в истории. Только назначенный ответственный может отправить `POST /api/crew/visits/:id/finish`. Один результат сохраняет описанную работу, фактическое время, количества в тысячных долях единицы и снимок всех назначений и чек-листов. Время начала берётся из записи запуска или её аудита. Для старого визита без такой записи нужно указать фактическое время. Частичный отчёт допускается. Закрытие доставки остаётся отдельной командой, а подписи хранятся пустыми до их фактического получения. Для этого этапа миграция не требуется. Проверено **121 backend-тестом** на изолированной PostgreSQL, включая одновременную повторную отправку, и учебным сценарием из двух бригад в Chrome.
+In phase three, `PATCH /api/deliveries/:id/appointments/:appointmentId/responsible` lets an operator or admin explicitly select one enabled participant from the actual staffing roster. Removing that person from a booked visit clears the selection and records the change in history. Only the assigned lead can submit `POST /api/crew/visits/:id/finish`. The result stores the work summary, actual times, quantities in thousandths of a unit, and a snapshot of all assignments and checklists. The start time comes from the start record or its audit entry. For an older visit without that record, the lead must enter the actual start time. Partial reports are supported. Delivery closure is a separate command, and signature fields stay empty until signatures are collected. This phase uses the existing schema. Verification covered **121 backend tests** on isolated PostgreSQL, including concurrent retries, and a Chrome demo with two crews.
 
-В четвёртом этапе `POST /api/crew/visits/:id/finish` сохраняет две рукописные подписи вместе с итогом визита. Имя клиента или получателя передаёт форма, имя ответственного сервер берёт из подтверждённого назначения. API проверяет размеры рисунков, наличие штрихов и различие двух подписей. В Backoffice → History подписи доступны рядом с итогом, именами и временем записи. Списки доставок и календарь исключают рисунки из ответов. Существующие результаты читаются без миграции, закрытие доставки остаётся отдельной командой. Проверены 123 backend-теста на изолированной PostgreSQL, typed lint, типизация, Docker-сборка и локальный сценарий DEMO/OUT/0011.
+In phase four, `POST /api/crew/visits/:id/finish` stores two handwritten signatures with the visit result. The form supplies the customer or recipient name, and the server takes the lead's name from the confirmed assignment. The API validates drawing sizes, the presence of strokes, and that the signatures differ. Backoffice → History shows both signatures alongside the result, names, and timestamps. Delivery lists and the calendar omit the drawings. Existing results remain readable on the existing schema, and delivery closure stays a separate command. Verification covered 123 backend tests on isolated PostgreSQL, typed lint, typecheck, a Docker build, and the local DEMO/OUT/0011 scenario.
 
-В пятом этапе `POST /api/crew/visits/:id/finish` требует от 1 до 100 JPEG или PNG, до 5 МиБ на снимок и до 20 МиБ в сумме. Снимки выполнения, ссылки на приватные файлы и общий итог коммитятся вместе. При повторе неизменённого запроса сохраняется один итог. Фото из Issues & returns остаются связанными с проблемами. Backoffice показывает миниатюры в History → Completion photos. Новая проверка применяется при отправке итога, ранее отправленные результаты читаются без миграции. Проверены 123 backend-теста на изолированной PostgreSQL и учебный сценарий с двумя снимками на DEMO/OUT/0013.
+In phase five, `POST /api/crew/visits/:id/finish` requires 1 to 100 JPEG or PNG files, up to 5 MiB per image and 20 MiB total. The completion photos, private file references, and visit result commit together. Replaying the same request stores a single result. Photos in Issues & returns retain their issue links. Backoffice shows thumbnails in History → Completion photos. The new rule applies when submitting the result. Previously submitted results remain readable on the existing schema. Verification covered 123 backend tests on isolated PostgreSQL and a two-photo demo for DEMO/OUT/0013.
 
-Если клиента нет и работы не было, назначенный ответственный может выбрать **Customer absent** на начатом визите. `POST /api/crew/visits/:id/attempt-failure` принимает `version`, `requestId` и обязательную `reason` длиной до 2000 символов. Команда сохраняет статус `failed`, причину, участника и время в одной транзакции. Подписи и фото выполненной работы для этого исхода не требуются. History показывает причину, ранее доставленные количества сохраняются, а незакрытая работа доступна для нового визита. При отсутствии другой работы или активных визитов доставка возвращается в **Inbox to plan**. Связанный запрос на повторный визит снова доступен для бронирования. Машина и водитель остаются забронированы до запланированного возврата.
+When the customer is absent and no work took place, the assigned lead can select **Customer absent** on a started visit. `POST /api/crew/visits/:id/attempt-failure` accepts `version`, `requestId`, and a required `reason` of up to 2,000 characters. The command records `failed` status, the reason, participant, and timestamp in one transaction. This outcome requires no signatures or completion photos. History displays the reason, previously delivered quantities are preserved, and remaining work is available for a new visit. If there is no other work or active visit, the delivery returns to **Inbox to plan**. Any linked follow-up request becomes bookable again. The vehicle and driver stay reserved through the scheduled return.
 
-Для этого сценария нужна миграция `FailedAttempt1793700600000`. В Compose её выполняет сервис `migrate`, при нативном запуске — `npm run migrate`. Сквозная регрессия запускается командой `npx --no-install tsx --test test/crew-access.test.ts` на отдельной тестовой PostgreSQL. Она проверяет отказ в доступе, повторную отправку, откат, History, полный остаток и закрытие после успешного повторного визита.
+This scenario requires the `FailedAttempt1793700600000` migration. Compose runs it through its `migrate` service. In native mode, run `npm run migrate`. Run the end-to-end regression with `npx --no-install tsx --test test/crew-access.test.ts` against separate PostgreSQL test data. It covers access denial, replay, rollback, History, the full remaining quantity, and closure after a successful follow-up visit.
 
-### Черновики рейсов
+### Route drafts
 
-Развитие расчёта выезда, последовательных ETA, работ и возврата без Google API, местные учебные точки Catania/Messina и приёмка на новых публичных адресах: [route-time.md](docs/route-time.md).
+[Route timing](docs/route-time.md) covers departure, sequential ETAs, work, and return without Google API, along with demo starting points in Catania and Messina and acceptance checks at new public addresses.
 
-Миграция `RouteDraft1793700700000` добавляет версионированные черновики. Admin и operator используют `/api/routes`, `/api/routes/jobs` и `/api/routes/preview`. Поиск в радиусе использует расстояние по прямой между известными координатами. ETA рассчитывается по направленным учебным или ручным временам переездов и длительности работ. При отсутствии времени переезда последующие ETA и возврат остаются неизвестными. Для подтверждённого визита учитывается окно клиента, если у адреса ровно один подтверждённый визит на дату выезда по Риму.
+The `RouteDraft1793700700000` migration adds versioned drafts. Admins and operators use `/api/routes`, `/api/routes/jobs`, and `/api/routes/preview`. Nearby search uses straight-line distance between known coordinates. ETA uses directional demo or manual travel times and work duration. If a travel time is missing, subsequent ETAs and the return time remain unknown. The customer window applies if the address has exactly one confirmed visit on the departure date in Rome.
 
-Проверка двух синтетических Picking, команда заполнения и ожидаемые ETA описаны в [сценарии MVP](docs/mvp-pilot.md#черновик-многоадресного-рейса). Для одного расчёта запустите `npx --no-install tsx --test test/route-calculation.test.ts`. Для HTTP-проверки с настоящей авторизацией и PostgreSQL добавьте `test/crew-access.test.ts`.
+The [MVP scenario](docs/mvp-pilot.md#multi-stop-route-draft) documents verification with two synthetic pickings, the seed command, and expected ETAs. For calculation tests, run `npx --no-install tsx --test test/route-calculation.test.ts`. Add `test/crew-access.test.ts` for HTTP tests with real authentication and PostgreSQL.
 
-#### Google Maps на локальном стенде
+#### Google Maps on the local stack
 
-В проекте Google Cloud с подключённым биллингом включите Maps JavaScript API и Routes API. Создайте отдельный ключ браузера с ограничениями на Maps JavaScript API и реферер `http://127.0.0.1:3000/*`. Серверный ключ ограничьте Routes API и исходящим IP, если адрес постоянный. Настройте квоты для учебного проекта. [Ограничения ключей Google Maps](https://developers.google.com/maps/api-security-best-practices).
+In a Google Cloud project with billing enabled, enable Maps JavaScript API and Routes API. Create a separate browser key restricted to Maps JavaScript API and the `http://127.0.0.1:3000/*` referrer. Restrict the server key to Routes API and the outbound IP address if it is static. Set quotas for the demo project. [Google Maps key restrictions](https://developers.google.com/maps/api-security-best-practices).
 
-Сохраните настройки в игнорируемом `.local/google-maps.json` внутри backend. Для нативного запуска достаточно файла и перезапуска API.
+Save the settings in the ignored `.local/google-maps.json` file inside the backend directory. For native mode, restart the API after saving the file.
 
 ```json
 {
@@ -118,7 +118,7 @@ OpenAPI генерируется в `docs/openapi.json` и доступен по
 }
 ```
 
-Для локальной карты можно оставить учебный Map ID по умолчанию. Если есть собственный JavaScript Map ID, добавьте поле `mapId`. Для первого включения в Docker передайте JSON через stdin в существующий приватный volume и перезапустите backend. Команда создания защищает имеющийся файл от перезаписи.
+The local map can use the default demo Map ID. If you have a custom JavaScript Map ID, add the `mapId` field. For initial Docker setup, pass the JSON through stdin to the existing private volume and restart the backend. The setup command protects an existing file from overwrite.
 
 ```powershell
 Get-Content -Raw -LiteralPath '.local/google-maps.json' |
@@ -126,120 +126,120 @@ Get-Content -Raw -LiteralPath '.local/google-maps.json' |
 docker compose restart backend
 ```
 
-После **Refresh drafts** клиент получает только ограниченный браузерный ключ. Сервер отправляет Google координаты выбранных точек в порядке черновика. Дорожные времена рассчитываются без текущих пробок. Действуют лимиты до 25 остановок, 30 запросов в минуту и двух одновременных расчётов на процесс. Результат Google используется в открытом черновике и в БД не записывается. Для проверки используйте учебные адреса. Для реальных адресов сначала согласуйте передачу координат и условия использования. [Правила Routes API](https://developers.google.com/maps/documentation/routes/policies).
+After **Refresh drafts**, the browser receives only the restricted browser key. The server sends Google the selected coordinates in draft order. Travel time estimates exclude live traffic. Limits are 25 stops, 30 requests per minute, and two concurrent calculations per process. Results are used in the open draft only. Use demo addresses for verification. Before using customer addresses, agree on coordinate sharing and the applicable terms. [Routes API policies](https://developers.google.com/maps/documentation/routes/policies).
 
-#### Проверка адреса и въезд для разгрузки
+#### Address review and unloading entrance
 
-Миграция `DestinationEntrance1793700800000` добавляет собственные подтверждённые точки въезда. При следующей доставке из того же источника для того же клиента по тому же адресу Backoffice использует этот въезд в Routes. После смены адреса прежняя точка не используется. История подтверждения хранит автора, время и версию. Адрес Odoo при этом не меняется.
+The `DestinationEntrance1793700800000` migration adds separately confirmed entrance points. Backoffice uses the confirmed entrance in Routes for the next delivery from the same source to the same customer and address. An address change invalidates the previous point for routing. Confirmation history records the actor, timestamp, and version. Odoo retains its original address.
 
-В **Review unloading entrance** ориентир из учебных данных показывается сразу. Для внешнего поиска включите Geocoding API и добавьте отдельный ограниченный серверный `geocodingKey` в тот же локальный файл настроек. После перезапуска API внешний поиск разрешён только для двух публичных учебных адресов из списка в `src/routing/google-geocoder.ts`. Это адреса муниципальных зданий в Milano и Monza. Ответ Google используется как временный ориентир. Сохраняется только независимо проверенный оператором въезд. Без ключей оператор может вручную ввести координаты, подтверждённые клиентом или бригадой. [Документация Geocoding API](https://developers.google.com/maps/documentation/geocoding/geocoding) · [Условия использования Google Maps для ЕЭЗ](https://cloud.google.com/terms/maps-platform/eea/maps-service-terms).
+**Review unloading entrance** immediately displays the available demo reference point. For external lookup, enable Geocoding API and add a separate restricted server-side `geocodingKey` to the same local settings file. After the API restarts, external lookup is limited to two public demo addresses listed in `src/routing/google-geocoder.ts`. Both are municipal buildings in Milan and Monza. Google results serve as a temporary reference. The operator independently verifies the entrance before saving. Operators without keys can enter coordinates confirmed by the customer or crew. [Geocoding API documentation](https://developers.google.com/maps/documentation/geocoding/geocoding) · [Google Maps terms for the EEA](https://cloud.google.com/terms/maps-platform/eea/maps-service-terms).
 
-На изолированной PostgreSQL 18.6 прошли 124 backend-теста. В браузерном демо `DEMO/OUT/0002` проверены обязательная причина в Crew, исключение визита из Upcoming, причина в History после Refresh и остаток в одну единицу стола и две единицы стульев. Повторный визит с фото и подписями прошёл через HTTP и позволил закрыть доставку.
+All 124 backend tests passed on isolated PostgreSQL 18.6. The `DEMO/OUT/0002` browser scenario verified that Crew required a reason, removed the visit from Upcoming, displayed the reason in History after a refresh, and retained a balance of one table and two chairs. The HTTP follow-up with photos and signatures allowed closure.
 
-## Машины и несколько orders в picking
+## Vehicles and multiple sales orders per picking
 
-Динамический каталог `Vehicles` находится под Skills. Машина компании или внешнего перевозчика назначается конкретному визиту с отдельным интервалом и необязательным водителем. Конфликты машины/участника проверяются сервером; замена и отмена сохраняют историю. После запуска API `./scripts/demo-vehicles.ps1` добавляет только отсутствующие вымышленные машины. [Правила и API транспорта](docs/vehicles.md).
+The dynamic **Vehicles** catalogue is below Skills. A company or external carrier vehicle is assigned to a particular visit with a separate time interval and optional driver. The server checks vehicle and participant conflicts. Replacements and cancellations retain history. With the API running, `./scripts/demo-vehicles.ps1` adds only missing fictional vehicles. [Transport rules and API](docs/vehicles.md).
 
-Одна Delivery — один picking с несколькими sales orders. Строки сохраняют свой order ID; количества, проблемы и повторные визиты учитываются по ID фактической строки picking. [Учебная модель источника и ожидаемые результаты](docs/source-model.md).
+Each delivery represents one picking, which may contain several sales orders. Lines retain their order IDs. Quantities, issues, and follow-up visits are tracked by the original picking line ID. [Demo source model and expected results](docs/source-model.md).
 
-## Права
+## Permissions
 
-| Действие | Operator | Admin |
+| Action | Operator | Admin |
 | --- | --- | --- |
-| Просмотр всех доставок, календаря, истории, файлов учебного workspace | Да | Да |
-| Импорт, инструкции, визиты, назначения, waiver с причиной, проблемы, возвраты, закрытие/переоткрытие | Да | Да |
-| Управление бригадами/участниками, навыками, машинами и шаблонами | Нет | Да |
-| Создание коммерческих заказов / запись в Odoo | Нет | Нет |
+| Read all deliveries, calendar entries, history, and files in the demo workspace | Yes | Yes |
+| Import, manage instructions and visits, assign, waive tasks with a reason, handle issues and returns, close or reopen | Yes | Yes |
+| Manage crews, participants, skills, vehicles, and templates | No | Yes |
+| Create commercial orders or write to Odoo | No | No |
 
-Пароли scrypt; случайные серверные сессии хранятся как hashes, cookie HttpOnly/SameSite=Strict, expiry/logout на сервере. Мутации требуют JSON и точный Origin. Secure=false допустим только для HTTP localhost стенда; production вне задачи. Две роли видят все записи одного учебного workspace: tenant-изоляция не выдумывается. Внешний участник — ресурс, аккаунт автоматически не создаётся.
+Passwords use scrypt. The server stores random session token hashes, uses HttpOnly and SameSite=Strict cookies, and controls expiry and logout. Mutations require JSON and an exact Origin. `Secure=false` is allowed only for the local HTTP demo. Both roles see all records in the single demo workspace. External participants are scheduling resources that do not automatically get accounts.
 
-## Модель и ограничения прототипа
+## Prototype model and limitations
 
-Один Delivery = один picking. Один sales order может иметь несколько pickings с разными строками; товары берутся из stock_move конкретного picking. Происхождение полей, SQL и ожидаемые IDs: [source-model.md](docs/source-model.md).
+One delivery represents one picking. A sales order may have multiple pickings with different lines. Products come from `stock_move` for the specific picking. See the [source model](docs/source-model.md) for field provenance, SQL, and expected IDs.
 
-Delivery хранится как версионированный JSONB-агрегат со строгой runtime-схемой: source, items, локальные инструкции, visits, snapshots задач/состава/результатов, issues и returns. Для небольшого прототипа это сознательное упрощение. Отдельно нормализованы users/sessions, crews/templates, идентификаторы и интервалы appointments, resource reservations, files, import log, audit и command receipts. Межтабличные связи защищены FK/UNIQUE/CHECK; внутренние ссылки агрегата проверяются доменными командами.
+A delivery is stored as a versioned JSONB aggregate with a strict runtime schema for source data, items, local instructions, visits, task, staffing, and result snapshots, issues, and returns. This simplifies the small prototype. Users, sessions, crews, templates, appointment identifiers and intervals, reservations, files, import logs, audit entries, and command receipts are normalized separately. Foreign-key, unique, and check constraints protect relationships across tables. Domain commands validate references inside the aggregate.
 
-Команда, версия и аудит сохраняются в одной TypeORM-транзакции. Устаревшая версия даёт 409. Повтор booking/assignment/result с тем же ID и содержимым не дублирует работу. Advisory lock сериализует проверку и запись расписания; это ограничивает throughput, что допустимо для локального стенда. Проверяются crew и общие/внешние people, интервалы [start,end), UTC/offset и Europe/Rome.
+The command, version, and audit entry commit in one TypeORM transaction. A stale version returns 409. Replaying a booking, assignment, or result with the same ID and payload stores it only once. An advisory lock serializes schedule checks and writes, which limits throughput on the local stack. Checks cover crews, shared or external participants, half-open `[start,end)` intervals, UTC offsets, and Europe/Rome.
 
-Повторный импорт обновляет только source-owned поля. Исчезнувший из фильтра picking сохраняется с review и блокировкой нового планирования. Изменение адреса/количества после booking даёт предупреждение. Signed snapshots не переписываются. Повторный подходящий source снимает review; ручного обхода нет. Предел полного сканирования — 5000 pickings, превышение является явной ошибкой.
+Repeat imports update only source-owned fields. A picking that no longer matches the filter is retained for review and blocked from new planning. If its address or quantity changes after booking, a warning is shown. Signed snapshots are immutable. The review clears when the source matches again. Full scans have a 5,000-picking limit and fail explicitly above it.
 
-Назначение фиксирует crew people и шаблоны. Disable запрещает новые назначения, прежние остаются. Severity и порядок независимы. Checklist не увеличивает количество; количества до 3 десятичных знаков учитываются в целых milli-units.
+Assignments snapshot crew members and templates. Disabling them blocks new assignments while preserving existing ones. Severity and order are independent. Checklists record tasks independently of delivery quantities. Quantities support up to three decimal places and are stored as integer milli-units.
 
-## Статусы и закрытие
+## Status and closure
 
-| Представление / действие | Правило |
+| View or action | Rule |
 | --- | --- |
-| Inbox | Нет активных визитов и выполненной работы |
-| Planned | Есть booking без crews |
-| Assigned | Есть crew; покрытие всех visits показано отдельно |
-| In progress | Есть начатый визит; имеет приоритет |
-| Partially completed | Есть работа, остались товары/задачи/visits |
-| Awaiting closure | Работа выполнена; требуется явное закрытие, причины blockers видны |
-| Issues / Return required | Пересекающиеся фильтры, счётчики нельзя складывать |
-| Completed | Только явная доменная команда после всех условий |
-| Reopen | Причина обязательна; прежнее завершение сохраняется |
+| Inbox | There are no active visits or completed work |
+| Planned | A visit is booked without an assigned crew |
+| Assigned | A crew is assigned. Coverage for all visits is shown separately |
+| In progress | A visit has started. This status takes priority |
+| Partially completed | Work has been reported and products, tasks, or visits are outstanding |
+| Awaiting closure | Work is complete. Explicit closure is required, and any blockers are shown |
+| Issues / Return required | The filters can overlap, so a delivery may count in both |
+| Completed | An explicit domain command closes the delivery once all conditions are met |
+| Reopen | A reason is required and the previous completion stays in history |
 
-Закрытие требует весь товарный объём, законченные/обоснованно waived задачи, завершённые визиты, отсутствие open issues/returns, обе подписи каждого выполненного визита и проверенный source. Booking возврата даёт planned, не resolved. Для демо разрешение return request требует все оставшиеся количества доставки и задачи linked visit — консервативное допущение, не правило клиента. Подпись — явно DEMO, без клиентского экрана рисования.
+Closure requires the full product quantities, completed tasks or reasoned waivers, finished visits, resolution of all issues and returns, both signatures for each completed visit, and a verified source. Booking a follow-up sets the request to `planned`. The demo requires all remaining deliveries and the linked visit's tasks to be complete before resolving a return request. The fixture uses explicitly labelled DEMO signatures.
 
-Файлы приватны в `.local/files`. Скачивание проверяет сессию и delivery ID; тип/размер/имя проверяются без доверия к MIME клиента. Разрешены PDF/TXT/PNG/JPEG до 5 MiB. Ответ attachment/nosniff; загрузки pending/ready/failed, отсутствующий файл даёт ошибку. Проверка типа для стенда не заменяет антивирус.
+Private files are stored in `.local/files`. Downloads require a session and the delivery ID. The backend validates the file type, size, and name independently of the client MIME type. Accepted formats are PDF, TXT, PNG, and JPEG up to 5 MiB. Responses use `attachment` and `nosniff`. Upload states are pending, ready, and failed. Missing files return an error. The demo validation checks file formats and leaves malware scanning to an external control.
 
-Резервное копирование и проверка восстановления в **новые** учебные базы: [recovery.md](docs/recovery.md). Между source, app DB и диском нет общей транзакции.
+See the [backup and recovery verification](docs/recovery.md) for restoring into **new** demo databases. The source, application database, and filesystem are separate transaction boundaries.
 
-Текущие результаты, версии и оставшиеся ограничения: [STATUS.md](docs/STATUS.md).
+See [implementation status](docs/STATUS.md) for results, versions, and remaining limitations.
 
-Географические фильтры Inbox и повторяемое заполнение учебных провинций/CAP без Google API: [geography-demo.md](docs/geography-demo.md). Метаданные вымышлены и хранятся отдельно от исходного snapshot Odoo; реальные поля источника будут сверены при подключении.
+The [geography demo](docs/geography-demo.md) documents Inbox filters and repeatable demo province and postal code data without Google API. Synthetic metadata is stored separately from the original Odoo snapshot. Source fields will be reconciled when connected.
 
-Все адреса `Via Dimostrativa` на текущем демо заменены реальными публичными адресами Catania/Messina с координатами зданий и проверенными источниками: [public-demo-addresses.md](docs/public-demo-addresses.md). Это учебные получатели, не реальные клиенты. Точки не подтверждают въезды для разгрузки. Документ содержит повторяемую команду обновления через fake Odoo и обычный импорт; права рабочего подключения к источнику остаются только на чтение.
+All `Via Dimostrativa` addresses in the current demo were replaced with [public Catania and Messina addresses with building coordinates and verified sources](docs/public-demo-addresses.md). Recipients are fictional. Building points require separate confirmation as unloading entrances. The runbook provides repeatable updates through fake Odoo and the normal importer. The source connection remains read-only.
 
-Сотрудники и гибкий состав: [people-and-staffing.md](docs/people-and-staffing.md). PostgreSQL хранит отдельные `person`, `crew`, `crew_member`; исходный crew JSON сохранён в `legacy_data`. Один участник может входить в обычный состав не более одной бригады, включая отключённые бригады. Обычный состав — шаблон. Для визита можно выбрать других свободных сотрудников без изменения этого шаблона и истории. Профили содержат first/last/preferred name, phone/address и необязательные учётные данные будущего frontoffice; пароль только на запись, в БД — хеш. Доступа к backoffice эти данные не дают.
+See [participant profiles and flexible staffing](docs/people-and-staffing.md). PostgreSQL stores `person`, `crew`, and `crew_member` separately and retains the original crew JSON in `legacy_data`. A participant can belong to at most one default roster, including disabled crews. The default roster is a template. Staff available for a visit can be selected without changing that template or history. Profiles include first, last, and preferred names, phone, address, and optional front-office credentials. The password is write-only and stored as a hash. These credentials are scoped to the front office.
 
-Для существующей локальной базы перед миграцией остановить API/импортёр и сделать согласованную копию `./scripts/postgres-backup.ps1 -WritersStopped`. Затем выполнить `npm run migrate`, отдельно `npm run migrate -- --test` для тестовой базы, собрать `npm run build` и запустить `npm start`. Существующим данным повторный seed не требуется. Перенос проверен сравнением исходных записей и тестами на изолированной PostgreSQL; автоматический разрушительный down не предусмотрен.
+For an existing local database, stop the API and importer before migration, then take a consistent backup with `./scripts/postgres-backup.ps1 -WritersStopped`. Run `npm run migrate`, separately run `npm run migrate -- --test` for the test database, build with `npm run build`, and start with `npm start`. Existing data needs no reseeding. Verification compared the original records and used isolated PostgreSQL tests. The migration has no automated destructive rollback.
 
-Новые HTTP-команды: `GET/POST /api/participants`, `PATCH /api/participants/:id`; `GET/PATCH /api/deliveries/:id/appointments/:appointmentId/participants`. Полная схема запросов/ответов — в генерируемом OpenAPI. Изменение обычного состава бригады принимает `participantIds`, а состав конкретного визита меняется одним запросом со всеми assignment IDs, версией доставки и причиной. Запись профилей требует admin, планирование — действующей backoffice-сессии.
+New HTTP commands are `GET/POST /api/participants`, `PATCH /api/participants/:id`, and `GET/PATCH /api/deliveries/:id/appointments/:appointmentId/participants`. Full request and response schemas are in the generated OpenAPI. Default roster changes accept `participantIds`. Changes to the staffing of a visit send all assignment IDs, the delivery version, and a reason in one request. Profile writes require admin authorization. Scheduling requires a valid Backoffice session.
 
-Явное заполнение 20 известных учебных профилей вымышленными итальянскими именами и контактами: при работающем локальном API выполнить `npm run demo:italian-participants`. Команда использует настоящую admin-сессию, сопоставляет записи только по UUID, заменяет известные DEMO-заглушки и заполняет пустые поля; существующие пользовательские значения, флаги и пароли сохраняются. Обычный seed остаётся неразрушительным и сам такую замену не запускает. Новые логины используют `@example.test`, телефоны — учебный префикс `+39 000`, адреса помечены `indirizzo fittizio`.
+To populate 20 known demo profiles with fictional Italian names and contacts, run `npm run demo:italian-participants` while the local API is running. The command uses a real admin session, matches profiles only by UUID, replaces known DEMO placeholders, and fills empty fields. Existing values, flags, and passwords are preserved. This replacement is separate from the non-destructive normal seed. New logins use `@example.test`, phones carry the demo prefix `+39 000`, and addresses are labelled `indirizzo fittizio`.
 
-Случайные пароли сохраняются **до** HTTP PATCH в игнорируемом `.local/participant-demo-accounts.json` и не печатаются; в PostgreSQL находятся только хеши. Повторный запуск заполненных профилей не выполняет PATCH, не увеличивает версии и не переписывает credentials-файл. При конфликте версии или неопределённом ответе команда останавливается; повтор читает актуальные профили и использует ранее сохранённые credentials. Бригады, членства, визиты, reservation и подписанная история не изменяются. Подготовленные поля не создают frontoffice login endpoint.
+Randomly generated passwords are saved **before** the HTTP PATCH to the ignored `.local/participant-demo-accounts.json` file and kept out of console output. PostgreSQL stores only their hashes. A repeat run on populated profiles skips PATCH calls and preserves profile versions and the credentials file. The command stops on a version conflict or uncertain response. A retry reads current profiles and uses the saved credentials. Crews, memberships, visits, reservations, and signed history are preserved. The prepared fields alone are insufficient for front-office login.
 
-## Календарь участника
+## Participant calendar
 
-`GET /api/participants/:id/calendar?from=<ISO>&to=<ISO>` доступен действующим backoffice-сессиям admin/operator. Интервал требует явный UTC/offset, конец после начала и диапазон не более 45 дней; пересечение визитов считается как [start,end). Ответ содержит публичный профиль без login/hasPassword и записи фактических назначений по UUID участника: дату, начало/конец визита, статус, picking/клиента, сохранённые crew/task/checklist snapshots и признак повторного визита. Обычный состав бригады не создаёт работу в календаре; одинаковые имена не объединяют людей. Завершённые и отменённые визиты доступны для просмотра истории. Задачи бригады используют общий интервал визита, отдельное время задач не выдумывается; results, signatures и файлы в проекцию не входят.
+`GET /api/participants/:id/calendar?from=<ISO>&to=<ISO>` is available to valid admin and operator Backoffice sessions. The interval requires an explicit UTC offset, an end after the start, and a range of no more than 45 days. Visit overlap uses `[start,end)`. Responses contain a public profile with no login or `hasPassword` and actual assignments for the participant UUID, including the date, visit start and end, status, picking and customer, saved crew, task, and checklist snapshots, and the follow-up flag. A default crew roster alone creates no calendar entries. The calendar distinguishes people with the same name by UUID. Completed and cancelled visits remain visible in history. Tasks use the shared visit interval. The projection excludes results, signatures, and files.
 
-Frontend открывает отдельную страницу `/participants/[id]/calendar` из Participants. Это read-only backoffice-функция без frontoffice, новых таблиц и миграций. Backend-проверки: **76/76 тестов**, typecheck, typed lint, build и генерация OpenAPI — PASS. Новые проверки используют настоящие guards и собственную схему изолированной PostgreSQL, проверяют права, границы интервала, UUID, snapshots, отсутствие credentials и неизменность бизнес-данных.
+Participants opens a separate read-only Backoffice page at `/participants/[id]/calendar`. The feature uses the existing database schema. Backend verification passed **76/76 tests**, typecheck, typed lint, build, and OpenAPI generation. The new tests use the real guards and an isolated PostgreSQL schema. They cover permissions, interval boundaries, UUIDs, snapshots, exclusion of credentials, and preservation of business data.
 
-Финальный frontend `npm run verify` — **38/38 тестов**, typecheck, typed lint и build — PASS; live read-only API smoke с действующей сессией оператора и новым endpoint — **1/1 PASS**. Оба production-сервера запущены локально. В браузере ссылка Simone из Participants открыла его календарь на 10 ноября: Catania Uno 09:00–11:00 и Assembly Studio 11:00–13:00, задача Check products. Проверены Refresh, открытие доставки и возврат в Participants без изменения бизнес-данных. Подробные наблюдения и [скриншот](../backoffice-frontend/docs/screenshots/participant-calendar.jpg) — в документации frontend.
+The final frontend `npm run verify` passed **38/38 tests**, typecheck, typed lint, and build. A live read-only API smoke test using an active operator session and the new endpoint passed **1/1**. Both production-mode servers were started locally. In the browser, opening Simone from Participants showed Catania Uno from 09:00 to 11:00 and Assembly Studio from 11:00 to 13:00 on November 10, with the Check products task. The browser checks covered Refresh, opening a delivery, and returning to Participants with business data preserved. See the frontend documentation for detailed observations and the [screenshot](../backoffice-frontend/docs/screenshots/participant-calendar.jpg).
 
-## Месячный календарь
+## Month view in both calendars
 
-Общий календарь и календарь участника поддерживают Day / Week / Month с общей панелью Previous / Today / Next и выбором месяца. Month показывает полные 4/5/6 недель с понедельника по воскресенье, включая соседние месяцы. Переходы между месяцами ограничивают выбранный день последним существующим днём нового месяца; учитываются високосный год и Europe/Rome DST. Дата и «+ more» открывают Day; событие открывает delivery. Refresh сохраняет смонтированную таблицу месяца, выбранный режим/месяц, фильтры и прокрутку.
+The main and participant calendars share Day / Week / Month views, Previous / Today / Next controls, and a month selector. Month shows four, five, or six full Monday–Sunday weeks, including adjacent months. When changing months, the day is capped at the last available day in the new month. Leap years and Europe/Rome daylight saving time are handled. A date or “+ more” opens Day view. An event opens the delivery. Refresh preserves the mounted month grid, selected view and month, filters, and scroll position.
 
-Прежний лимит 32 дня расширен до **45 дней** общим правилом для `/api/calendar` и `/api/participants/:id/calendar`, чтобы поместилась шестинедельная сетка с дополнительным часом осеннего DST. Строгие ISO/offset, границы, half-open пересечение и авторизация сохраняются; формат ответов не меняется. Backend: **77/77 тестов**, typecheck, typed lint, build и OpenAPI — PASS; real-guard/PostgreSQL-регрессия проверяет 42 дня + 1 час, ровно 45 дней и отказ при превышении на 1 мс. Новых таблиц, миграций, frontoffice или зависимостей нет.
+The shared limit for `/api/calendar` and `/api/participants/:id/calendar` increased from 32 to **45 days** to fit a six-week grid with the extra hour at the autumn daylight saving transition. Strict ISO timestamps with an offset, interval bounds, half-open overlap, authorization, and the response formats were preserved. Backend verification passed **77/77 tests**, typecheck, typed lint, build, and OpenAPI generation. The regression uses real guards and PostgreSQL to test 42 days plus one hour, exactly 45 days, and rejection at one millisecond over the limit. The change uses the existing schemas and dependencies.
 
-Финальный Month frontend `npm run verify` — **47/47 тестов**, typecheck, typed lint и build — PASS. Live read-only API smoke с действующей operator-сессией проверил полные 42-дневные запросы обоих endpoints — **1/1 PASS**. Локальные API/UI перезапущены. В браузере проверены обе месячные сетки, Previous / Next / Today, переход даты в Day и события в `DEMO/OUT/0002`, Refresh и ограниченное внутреннее переполнение на 320 px. Бизнес-данные не менялись. Снимки: [общий Month](../backoffice-frontend/docs/screenshots/calendar-month.jpg), [Month участника](../backoffice-frontend/docs/screenshots/participant-calendar-month.jpg); подробные измерения — в frontend design-system.
+The final Month frontend `npm run verify` passed **47/47 tests**, typecheck, typed lint, and build. A live read-only API smoke test using an active operator session checked full 42-day requests to both endpoints and passed **1/1**. The local API and UI were restarted. In the browser, both month grids were checked, including Previous / Next / Today, navigating from a date to Day, opening `DEMO/OUT/0002`, Refresh, and contained overflow at 320 px. Business data was preserved. Screenshots include the [main Month view](../backoffice-frontend/docs/screenshots/calendar-month.jpg) and [participant Month view](../backoffice-frontend/docs/screenshots/participant-calendar-month.jpg). Detailed measurements are in the frontend design system.
 
-## Один обычный состав на участника
+## One default crew per participant
 
-Новое уточнение пользователя отменяет прежнее допущение о нескольких default rosters: один person UUID имеет **0..1** обычное членство во всех бригадах, включая disabled. Admin POST/PATCH crew проверяет это внутри общей advisory-транзакции; конфликт даёт 409 с именем участника и занятой бригады. Одновременные сохранения защищены также `UNIQUE(person_id)` на `crew_member`. Состав визита остаётся независимым: доступный участник может работать с другой бригадой в другом интервале; снимки назначений/задач/результатов не переписываются.
+The updated rule gives each person UUID **0 or 1** default membership across all crews, including disabled crews. Admin crew POST and PATCH operations check this within the shared advisory transaction. Conflicts return 409 with the names of the participant and current crew. `UNIQUE(person_id)` on `crew_member` also protects against concurrent saves. Visit staffing stays independent: an available participant can work with another crew in a different interval, and existing assignment, task, and result snapshots are immutable.
 
-После backup `.local/backups/20261103T164641Z_b1425d82` пользователь выбрал сохранить Antonio Lombardo в Messina Due, Alessandro Costa в Catania Uno и Andrea Grasso в Catania Due. Один настоящий admin HTTP PATCH Assembly Studio (`10000000-0000-4000-8000-000000000005`) повысил версию 10→11 и убрал только эти три UUID; её обычный состав теперь пуст, остальные бригады сохранены. Baseline: `.local/single-crew-before-20261103T164641Z.json`; readback/evidence: `.local/single-crew-repair-20261103T164641Z.json`. Затем `UniqueDefaultCrew1793700200000` применена к основной и тестовой базам. Миграция сама не удаляет и не выбирает членства: при дубликатах останавливается с отчётом до DDL.
+After the backup at `.local/backups/20261103T164641Z_b1425d82`, the user chose to keep Antonio Lombardo in Messina Due, Alessandro Costa in Catania Uno, and Andrea Grasso in Catania Due. One real admin HTTP PATCH raised Assembly Studio (`10000000-0000-4000-8000-000000000005`) from version 10 to 11 and removed only those three UUIDs. Its default roster is now empty and the other crews were preserved. The baseline is `.local/single-crew-before-20261103T164641Z.json` and the evidence is `.local/single-crew-repair-20261103T164641Z.json`. Then `UniqueDefaultCrew1793700200000` was applied to the main and test databases. The migration stops with a report before DDL if it finds duplicates. Membership decisions are made before migration.
 
-Backend: **80/80 тестов**, typecheck, typed lint, build и OpenAPI — PASS. Frontend: **51/51**, typecheck, typed lint и build — PASS; live read-only API smoke — **1/1 PASS**. Команды безопасного переноса и различие default roster / visit staffing — в [people-and-staffing.md](docs/people-and-staffing.md).
+Backend verification passed **80/80 tests**, typecheck, typed lint, build, and OpenAPI generation. Frontend verification passed **51/51 tests**, typecheck, typed lint, build, and the live read-only API smoke test (**1/1**). See [participant profiles and flexible staffing](docs/people-and-staffing.md) for the migration commands and the distinction between a default roster and actual visit staffing.
 
-## Навыки участников
+## Participant skills
 
-[Skills](docs/participant-skills.md) — динамический справочник под Delivery views и назначение навыков людям. Навык принадлежит participant UUID, сохраняется при работе с другой бригадой и не означает реальную сертификацию. Admin создаёт/редактирует навыки и выдаёт их участникам; operator читает. Task templates задают обязательные навыки: **каждый** фактически выбранный участник каждой бригады должен иметь **все** требования выбранных задач. Разделение навыков между разными людьми не покрывает требование. При изменении Visit staffing используются сохранённые требования задач, а не сегодняшние шаблоны. Отключённый обязательный навык блокирует новое назначение/смену состава; старые подписанные snapshots не переписываются.
+[Skills](docs/participant-skills.md) is a dynamic catalogue under Delivery views. Skills belong to participants by UUID and remain attached when they work with a different crew. They are demo records, not proof of qualification. Admins can create, edit, and assign skills. Operators can read them. Task templates define requirements, and **each** selected participant in **every** crew needs **all** required skills for the selected tasks. When updating visit staffing, the system uses the saved task requirements. A disabled required skill blocks new assignments or staffing changes. Signed snapshots are immutable.
 
-В Docker прошли **95/95 backend-тестов**, typecheck, полный typed lint и runtime/tools build. Frontend: typecheck, typed lint, **62/62 теста**, build и live read-only HTTP smoke **1/1 PASS**. Тестовые файлы backend выполняются последовательно из-за общих PostgreSQL advisory locks; проверки реальной конкуренции внутри тестов сохранены. `ParticipantSkills1793700300000` применена к основной и тестовой Docker-базам после свежего согласованного Docker backup; прежние данные, история, app-data и семь secret-файлов независимо сверены. В обеих базах четыре миграции. API/importer/DB работают в Docker, frontend — на хосте; нативный кластер сохранён и остановлен.
+All **95/95 backend tests**, typecheck, full typed lint, and runtime and tools builds passed in Docker. Frontend typecheck, typed lint, **62/62 tests**, build, and live read-only HTTP smoke test (**1/1**) passed. Backend test files run serially because they share PostgreSQL advisory locks. Concurrency is still exercised within individual tests. `ParticipantSkills1793700300000` was applied to the main and test Docker databases after a fresh consistent backup. Independent checks covered existing records, history, application data, and seven secret files. Both databases have four migrations. The API, importer, and database run in Docker, and the frontend runs on the host. The native cluster is saved and stopped.
 
-Учебный каталог и конкретный пример создаются через настоящую admin HTTP-сессию:
+Use the following commands to populate the demo catalogue and the specific example through a real admin HTTP session:
 
 ```powershell
 ./scripts/demo-skills.ps1
-# Дополнительно: шесть навыков конкретному Simone и требование Furniture assembly в известном Assemble.
+# Optional: assign six skills to the demo participant Simone and require Furniture assembly for the known Assemble template.
 ./scripts/demo-skills.ps1 -AssignSimoneExample
 ```
 
-Первый пример создал 6 навыков и выполнил 2 изменения metadata, повтор — 0/0. В браузере дополнительно создан Heavy lifting и Antonio сохранены Heavy lifting + Product inspection; это вымышленные учебные сведения. Команды не меняют прежние визиты, составы бригад, контакты, пароли или подписанную историю. Точные UUID, правила API, backup и границы проверки — в [participant-skills.md](docs/participant-skills.md).
+The first run created six skills and made two metadata updates. Repeating it made no changes. The browser demo added Heavy lifting and saved Heavy lifting and Product inspection for Antonio. These are fictional training examples. The commands preserve previous visits, rosters, contact details, passwords, and signed history. See [participant skills](docs/participant-skills.md) for the exact UUIDs, API rules, backup, and verification scope.
 
 ## Odoo development-copy integration
 
