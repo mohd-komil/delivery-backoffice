@@ -6,7 +6,7 @@ import { AppointmentSchema, createDelivery, type Delivery } from '../src/domain/
 import { planVisitWork } from '../src/domain/rules';
 import { CrewSchema, ParticipantSchema, VehicleSchema } from '../src/operations/contracts';
 import { calculateRouteTimeline } from '../src/routing/calculation';
-import { RouteDraftInputSchema, type RouteDraftInput } from '../src/routing/contracts';
+import { RouteDraftInputSchema } from '../src/routing/contracts';
 import { demoRouteAddressIds, getDemoRouteEstimates, routeDepots } from '../src/routing/demo-estimates';
 import { assessRoute, RouteFeasibilitySchema, type RouteResources, type RouteWorkAssessment } from '../src/routing/feasibility';
 import { routeJob } from '../src/routing/service';
@@ -43,7 +43,7 @@ function fixture() {
       workFingerprint: job.workFingerprint, customerWindow: { kind: 'unrestricted' } })),
     planning: { participantIds: [person.id], participantAvailability: [{ participantId: person.id,
       workingIntervals: [{ startsAt: '2026-11-12T07:00:00Z', endsAt: '2026-11-12T18:00:00Z' }], unavailableIntervals: [] }],
-    driver: { kind: 'participant', participantId: person.id }, vehicleAvailability: null, transferBufferMinutes: 0 },
+    driver: { kind: 'none' }, vehicleAvailability: null, transferBufferMinutes: 0 },
   });
   const resources: RouteResources = { participants: [person], crews: [crew], vehicles: [vehicle], busy: [] };
   const work: RouteWorkAssessment[] = jobs.map((job) => ({ deliveryId: job.deliveryId, source: 'manual', minutes: 30, fingerprint: job.workFingerprint, blockedReason: job.workReviewReason }));
@@ -110,13 +110,14 @@ void test('only exactly linked own appointment resources are excluded; another v
   assert.equal(data.evaluate(data.input, { ...data.resources, busy: [{ ...busy, appointmentId: randomUUID() }] }).status, 'conflict');
 });
 
-void test('external driver and vehicle need full interval confirmation and transfer buffer is explicit', () => {
+void test('an external vehicle still needs full interval confirmation and transfer buffer without a driver', () => {
   const data = fixture(); const planning = data.input.planning; assert.ok(planning);
   const resources = { ...data.resources, vehicles: [{ ...data.vehicle, ownership: 'external' as const, providerName: 'DEMO provider' }] };
-  const input: RouteDraftInput = { ...data.input, planning: { ...planning, driver: { kind: 'external', name: 'DEMO Paolo', availability: null } } };
-  const missing = data.evaluate(input, resources);
+  const missing = data.evaluate(data.input, resources);
   assert.ok(missing.findings.some(({ code }) => code === 'external_vehicle_unknown'));
-  assert.ok(missing.findings.some(({ code }) => code === 'external_driver_unknown'));
+  assert.equal(data.evaluate({ ...data.input, planning: { ...planning, vehicleAvailability: {
+    startsAt: '2026-11-12T06:00:00Z', endsAt: '2026-11-12T18:00:00Z',
+  } } }, resources).status, 'feasible_estimate');
   assert.ok(data.evaluate({ ...data.input, planning: { ...planning, transferBufferMinutes: null } }).findings.some(({ code }) => code === 'transfer_buffer_unknown'));
 });
 

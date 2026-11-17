@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { remainingWorkEstimateSchema } from './contracts';
 import { coordinateFromText, mapCoordinatesSchema as coordinates } from './map-coordinates';
+import { geocodingMetadataSchema } from './delivery-geocoding';
+import { routeCalendarSchema } from './planning-calendar';
+import { routeLocationsSchema } from './planning-locations';
 
 const instant = z.iso.datetime({ offset: true });
 const nullableMinutes = z.number().nonnegative().nullable();
@@ -15,16 +18,21 @@ export const routeWindowSchema = z.discriminatedUnion('kind', [
 ]);
 export type RouteWindow = z.infer<typeof routeWindowSchema>;
 export const routePlanningSchema = z.object({
+  availabilityMode: z.enum(['manual', 'shared_calendar']).optional(),
   participantIds: z.array(z.uuid()),
   participantAvailability: z.array(z.object({ participantId: z.uuid(), workingIntervals: z.array(interval),
     unavailableIntervals: z.array(z.object({ startsAt: instant, endsAt: instant, kind: z.enum(['break', 'absence']) })) })),
   vehicleAvailability: interval.nullable(),
-  driver: z.discriminatedUnion('kind', [z.object({ kind: z.literal('unknown') }),
+  driver: z.discriminatedUnion('kind', [z.object({ kind: z.literal('none') }), z.object({ kind: z.literal('unknown') }),
     z.object({ kind: z.literal('participant'), participantId: z.uuid() }),
-    z.object({ kind: z.literal('external'), name: z.string().min(1), availability: interval.nullable() })]),
+    z.object({ kind: z.literal('external'), name: z.string().min(1), availability: interval.nullable() })]).default({ kind: 'none' }),
   transferBufferMinutes: z.number().int().nonnegative().nullable(),
 });
 export type RoutePlanning = z.infer<typeof routePlanningSchema>;
+
+export function routePlanningWithoutDriver(planning: RoutePlanning): RoutePlanning {
+  return { ...planning, driver: { kind: 'none' } };
+}
 const stop = z.object({ deliveryId: z.uuid(), appointmentId: z.uuid().optional(), workMinutes: z.number().int().min(1).max(1440).nullable(),
   workDurationSource: z.enum(['manual', 'remaining_estimate', 'unknown']).optional(), workFingerprint: addressKey.optional(), customerWindow: routeWindowSchema.optional(), pin: pin.optional() });
 const pointContext = z.object({ point: coordinates.nullable(), addressKey: addressKey.nullable() });
@@ -53,12 +61,13 @@ export const routeJobSchema = z.object({
   deliveryId: z.uuid(), pickingName: z.string(), orderNames: z.array(z.string()), customerName: z.string(),
   address: z.string().nullable(), city: z.string().nullable(), point: coordinates.nullable(), addressKey: addressKey.optional(), distanceKm: z.number().nonnegative().nullable(),
   entranceConfirmed: z.boolean().optional(),
+  geocoding: geocodingMetadataSchema.optional(),
   remainingWorkEstimate: remainingWorkEstimateSchema.optional(),
   workFingerprint: addressKey.optional(),
   workBasis: z.enum(['available_remaining', 'appointment']).optional(),
   hasAvailableRemaining: z.boolean().optional(),
   appointmentId: z.uuid().nullable().optional(),
-  workReviewReason: z.enum(['source_review', 'unknown_service', 'legacy_scope_review', 'scope_outdated', 'over_reserved',
+  workReviewReason: z.enum(['source_review', 'prior_work_review', 'unknown_service', 'legacy_scope_review', 'scope_outdated', 'over_reserved',
     'missing_scope', 'source_changed', 'work_changed', 'appointment_unavailable', 'stock_pending', 'damage_hold']).nullable().optional(),
   appointmentOptions: z.array(z.object({ id: z.uuid(), startsAt: instant, endsAt: instant, customerConfirmed: z.boolean(),
     needsReview: z.boolean(), suggestedWorkMinutes: z.number().int().positive().nullable() })).optional(),
@@ -95,6 +104,7 @@ const road = z.discriminatedUnion('status', [
   z.object({ status: z.enum(['unconfigured', 'missing_coordinates', 'too_many_stops', 'unavailable']) }),
 ]);
 export const routePreviewSchema = z.object({
+  calendar: routeCalendarSchema.optional(), locations: routeLocationsSchema.optional(),
   timeline, jobs: z.array(routeJobSchema), road: road.optional(),
   pointContexts: z.array(pointContext.extend({ pointId })),
   warnings: z.array(z.object({ code: z.enum(['manual_estimate_stale', 'manual_estimate_unverified']), fromPointId: pointId, toPointId: pointId })),

@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { AppointmentSchema, AssignmentSchema, IdSchema, InstantSchema, ResponsibleParticipantSchema, VisitWorkScopeSchema, WorkLinesInputSchema } from '../domain/model';
 import { RouteDraftInputSchema, RouteTimelineSchema } from './contracts';
 import { RouteFeasibilitySchema } from './feasibility';
+import { RouteLocationsSchema } from '../planning/location-contracts';
+import { RouteCalendarSchema } from '../planning/calendar-contracts';
 
 const NormalId = IdSchema.toLowerCase();
 const StopFields = { deliveryId: NormalId, responsibleParticipantId: NormalId };
@@ -32,8 +34,10 @@ export const PublicationReviewStopSchema = z.object({
   customerConfirmationStatus: z.enum(['customer_confirmed', 'awaiting_customer_confirmation']),
 }).strict();
 export const PublicationReviewSchema = z.object({
+  calendar: RouteCalendarSchema.optional(),
   routeId: IdSchema, draftVersion: z.number().int().positive(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   publicationEnabled: z.boolean(), timeline: RouteTimelineSchema, feasibility: RouteFeasibilitySchema,
+  locations: RouteLocationsSchema.optional(),
   stops: z.array(PublicationReviewStopSchema).min(1).max(30),
 }).strict();
 export const PublicationSummarySchema = z.object({

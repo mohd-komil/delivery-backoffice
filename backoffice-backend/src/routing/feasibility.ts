@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { IdSchema, InstantSchema, type Delivery } from '../domain/model';
 import type { Crew, Participant, Vehicle } from '../operations/contracts';
 import { activeTransport } from '../operations/vehicles';
+import type { RouteCalendar } from '../planning/calendar-contracts';
 import { RouteWorkDurationSourceSchema, type RouteDraftInput, type RoutePointContext, type RouteTimeline } from './contracts';
 
 export const RouteFeasibilityFindingSchema = z.object({
@@ -22,6 +23,8 @@ export type RouteBusyInterval = { resource: string; appointmentId: string; picki
 export type RouteResources = {
   participants: Participant[]; crews: Crew[]; vehicles: Vehicle[]; busy: RouteBusyInterval[];
   disabledSkillIds?: string[];
+  locationRevisions?: { id: string; version: number }[];
+  calendar?: RouteCalendar;
 };
 export type RouteWorkAssessment = { deliveryId: string; minutes: number | null; source: z.infer<typeof RouteWorkDurationSourceSchema>; fingerprint: string; blockedReason: string | null };
 type Interval = { startsAt: string; endsAt: string };
@@ -78,12 +81,6 @@ export function assessRoute(
       }
     }
   }
-  if (planning?.driver.kind === 'participant') {
-    if (!ids.includes(planning.driver.participantId)) add('conflict', 'driver_not_selected', 'The driver must be one of the selected participants.');
-  } else if (planning?.driver.kind === 'external') {
-    if (!planning.driver.availability) add('unknown', 'external_driver_unknown', 'Confirm external driver availability for the full trip.');
-    else if (trip && !covers(planning.driver.availability, trip)) add('conflict', 'external_driver_unavailable', 'The external driver availability does not cover the return journey.', trip);
-  } else add('unknown', 'driver_unknown', 'Select the driver or record confirmed external driver availability.');
   if (vehicle?.ownership === 'external') {
     if (!planning?.vehicleAvailability) add('unknown', 'external_vehicle_unknown', 'Confirm external vehicle availability for the full trip.');
     else if (trip && !covers(planning.vehicleAvailability, trip)) add('conflict', 'external_vehicle_unavailable', 'The external vehicle availability does not cover the return journey.', { resourceId: `vehicle:${vehicle.id}`, ...trip });
@@ -123,12 +120,7 @@ export function assessRoute(
     const transports = activeTransport(appointment);
     const allocation = transports.length === 1 ? transports[0] : undefined;
     if (transports.length && (!allocation || allocation.vehicle.id !== input.vehicleId)) add('conflict', 'vehicle_changes', 'This visit uses a different vehicle or multiple vehicles; review the trip composition.', details);
-    else if (allocation && compositionMatches && planning) {
-      const driverMatches = allocation.driver.kind === 'participant' && planning.driver.kind === 'participant' && allocation.driver.person.id === planning.driver.participantId;
-      const externalMatches = allocation.driver.kind === 'external' && planning.driver.kind === 'external' && allocation.driver.name === planning.driver.name;
-      if (driverMatches || externalMatches) ownReservations.add(`${appointment.id}:vehicle:${allocation.vehicle.id}`);
-      else add('conflict', 'driver_changes', 'This visit has a different transport driver; review the trip composition.', details);
-    }
+    else if (allocation && compositionMatches) ownReservations.add(`${appointment.id}:vehicle:${allocation.vehicle.id}`);
   }
   if (trip) {
     const selectedResources = new Set([...ids.map((id) => `person:${id}`), ...(input.crewId ? [`crew:${input.crewId}`] : []), ...(input.vehicleId ? [`vehicle:${input.vehicleId}`] : [])]);

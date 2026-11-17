@@ -53,7 +53,7 @@ export function LoginScreen() {
         <h1>{t('signInTitle')}</h1>
         <p>{t('signInDescription')}</p>
       </div>
-      <form className="panel login-form" aria-busy={submitting} onSubmit={(event) => void submit(event)}>
+      <form className="panel login-form" method="post" aria-busy={submitting} onSubmit={(event) => void submit(event)}>
         {error ? <Notice>{t(error)}</Notice> : null}
         <label className="field" htmlFor="crew-login">
           <span>{t('username')}</span>

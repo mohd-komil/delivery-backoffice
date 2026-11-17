@@ -1,5 +1,8 @@
 'use client';
 
+import { Combobox } from '@/shared/ui/combobox';
+
+
 import { useLocale, useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
 import { useSyncExternalStore, useTransition } from 'react';
@@ -21,20 +24,20 @@ export function Preferences() {
   return <div className="preferences" role="group" aria-label={t('preferences')}>
     <label>
       <span>{t('language')}</span>
-      <select value={locale} disabled={pending} onChange={(event) => {
+      <Combobox value={locale} disabled={pending} onChange={(event) => {
         const value = event.currentTarget.value;
         startTransition(() => saveCrewLocale(value));
       }}>
         {Object.entries(localeNames).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-      </select>
+      </Combobox>
     </label>
     <label>
       <span>{t('theme')}</span>
-      <select value={mounted ? theme ?? 'system' : 'system'} disabled={!mounted} onChange={(event) => setTheme(event.currentTarget.value)}>
+      <Combobox value={mounted ? theme ?? 'system' : 'system'} disabled={!mounted} onChange={(event) => setTheme(event.currentTarget.value)}>
         <option value="system">{t('system')}</option>
         <option value="light">{t('light')}</option>
         <option value="dark">{t('dark')}</option>
-      </select>
+      </Combobox>
     </label>
   </div>;
 }

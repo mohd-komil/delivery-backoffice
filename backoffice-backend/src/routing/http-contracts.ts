@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { GeoPointSchema, IdSchema, InstantSchema, RemainingWorkEstimateSchema } from '../domain/model';
 import { RouteAddressKeySchema, RouteDraftInputSchema, RoutePointContextSchema, RoutePointIdSchema, RouteTimelineSchema } from './contracts';
 import { RouteFeasibilitySchema } from './feasibility';
+import { GeocodingMetadataSchema } from './geocoding-contracts';
+import { RouteLocationsSchema } from '../planning/location-contracts';
+import { RouteCalendarSchema } from '../planning/calendar-contracts';
 
 export const RouteJobsQuerySchema = z.object({
   search: z.string().trim().max(100).optional(),
@@ -20,7 +23,7 @@ const RouteStopWorkSchema = z.object({
 });
 
 const RouteWorkReviewReasonSchema = z.enum([
-  'source_review', 'unknown_service', 'legacy_scope_review', 'scope_outdated', 'over_reserved',
+  'source_review', 'prior_work_review', 'unknown_service', 'legacy_scope_review', 'scope_outdated', 'over_reserved',
   'missing_scope', 'source_changed', 'work_changed', 'appointment_unavailable', 'stock_pending', 'damage_hold',
 ]);
 const RouteAppointmentOptionSchema = z.object({
@@ -38,6 +41,7 @@ export const RouteJobSchema = z.object({
   city: z.string().nullable(),
   point: GeoPointSchema.nullable(),
   entranceConfirmed: z.boolean(),
+  geocoding: GeocodingMetadataSchema.optional(),
   addressKey: RouteAddressKeySchema,
   distanceKm: z.number().nonnegative().nullable(),
   suggestedWorkMinutes: z.number().int().positive().nullable(),
@@ -67,10 +71,12 @@ export const RouteWarningSchema = z.object({
   fromPointId: RoutePointIdSchema, toPointId: RoutePointIdSchema,
 }).strict();
 export const RoutePreviewSchema = z.object({
+  calendar: RouteCalendarSchema.optional(),
   timeline: RouteTimelineSchema, jobs: z.array(RouteJobSchema), road: RouteRoadSchema.optional(),
   pointContexts: z.array(RoutePointContextSchema.extend({ pointId: RoutePointIdSchema })).max(32),
   warnings: z.array(RouteWarningSchema).max(31),
   feasibility: RouteFeasibilitySchema,
+  locations: RouteLocationsSchema.optional(),
 });
 export const RouteSuggestionSchema = z.object({
   status: z.enum(['suggested', 'no_improvement_found', 'insufficient_data']),

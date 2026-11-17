@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { geographySchema } from './contracts';
 import { mapCoordinatesSchema } from './map-coordinates';
 import { inboxMapAreaResultSchema } from './inbox-map-area';
+import { geocodingMetadataSchema } from './delivery-geocoding';
 
 const mapDeliverySchema = z.object({
   deliveryId: z.uuid(), pickingName: z.string(), orderNames: z.array(z.string()), customerName: z.string(),
@@ -10,7 +11,7 @@ const mapDeliverySchema = z.object({
 
 export const inboxMapSchema = z.object({
   total: z.number().int().nonnegative(), mappedCount: z.number().int().nonnegative(), missingCount: z.number().int().nonnegative(),
-  markers: z.array(mapDeliverySchema.extend({ point: mapCoordinatesSchema, pointSource: z.enum(['confirmed_entrance', 'reference']) })),
+  markers: z.array(mapDeliverySchema.extend({ point: mapCoordinatesSchema, pointSource: z.enum(['confirmed_entrance', 'reference', 'geocoded']), geocoding: geocodingMetadataSchema.optional() })),
   missingCoordinates: z.array(mapDeliverySchema),
   area: inboxMapAreaResultSchema.nullable().default(null),
 }).superRefine((data, context) => {

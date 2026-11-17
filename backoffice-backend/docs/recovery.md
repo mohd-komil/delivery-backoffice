@@ -9,10 +9,65 @@ The active Docker deployment now has a separate `scripts/docker-backup.ps1`. Run
 ```powershell
 docker compose --profile importer stop backend importer
 ./scripts/docker-backup.ps1 -WritersStopped
-docker compose --profile importer up -d --wait
+docker start delivery-backoffice-backend-1 delivery-backoffice-importer-1
 ```
 
-Run each command only after the preceding command succeeds. The script checks the exact Compose project, mounted PostgreSQL/application volumes and inactive clients. It copies all three current databases, globals, complete app-data and seven recovery-secret files into a new protected, Git-ignored backup directory. The completed manifest records table row digests, sequences, schema/index/constraint/ACL metadata, exact app-data names/sizes/SHA-256, archive hashes and secret-copy hashes. Archive file bytes are independently read back and compared before completion. It never starts or connects to the native cluster and never removes volumes.
+Stop any separately running test/demo writers as well. Resume the previously running services even if backup verification fails; a failed backup is not a recovery point. Use `docker start` with the observed existing container names to resume only those containers: `compose start` can also start a stopped migration dependency. The script checks the exact Compose project, mounted PostgreSQL/application volumes and inactive clients. It copies all three current databases, globals, complete app-data and seven recovery-secret files into a new protected, Git-ignored backup directory. The completed manifest records table row digests, sequences, schema/index/constraint/ACL metadata, exact app-data names/sizes/SHA-256, archive hashes and secret-copy hashes. Archive file bytes are independently read back and compared before completion. It never starts or connects to the native cluster and never removes volumes.
+
+## Restore current Docker data to a separate stand
+
+Use PowerShell 7 and an existing verified Docker backup. The new restore helper never targets the running application's database or volumes:
+
+```powershell
+./scripts/docker-restore-check.ps1 -BackupDirectory '.local/backups/<completed Docker backup>' -ApiPort 3021
+```
+
+It creates a uniquely named `delivery-restore-*` Compose project with its own PostgreSQL and app-data volumes and internal database network. PostgreSQL has no published host port. The API additionally joins a project-owned `host-access` bridge to publish its distinct loopback port; an internal-only network did not expose the port on the tested Docker Engine 29.9.2. Neither network is shared with the main project. The helper pins the installed PostgreSQL/backend/tools image IDs, restores role definitions under a separate bootstrap account, restores all three databases with their original names/owners/privileges, and extracts files only into the new empty volume. It does not run migrations, seed, imports or cleanup.
+
+The private `.local/restore-checks/<run>/run.json` records the explicit Compose project/file. Database content, sequences and schema/ACL metadata are compared with the backup. `differences.json` records any differences; a mismatch stops the check and keeps the API stopped for review. Every restored file is checked against its original size/SHA-256 and every ready application record must have physical bytes. Failed and pending records keep their original state.
+
+After successful database/file verification, start and test only the restored backend:
+
+```powershell
+$run = Get-Content '.local/restore-checks/<run>/run.json' -Raw | ConvertFrom-Json
+docker compose --project-name $run.project --file $run.composeFile --profile restored up -d --no-deps --wait backend
+./scripts/docker-restore-api-check.ps1 -ProjectName $run.project -ComposeFile $run.composeFile -BackupDirectory $run.backupDirectory -ApiPort 3021
+```
+
+This API check signs in as the normal operator and compares all delivery versions, reports/signatures and History with the restored database. It downloads every ready private attachment and compares its bytes with the fresh backup. Anonymous access and an invalid request Origin must be rejected. Only the clone's authentication session is created and logged out; business state is not changed.
+
+Separate browser demos can bind host directories over `/app/.local/*-browser-demo`. Those files are outside the main app-data archive. Capture their files while their writer is stopped, with a separate size/SHA-256 manifest; do not claim they are backed up merely because their schema is in `test.dump`. The optional `docker-restore-demo-files.ps1 -RunDirectory '.local/restore-checks/<run>'` restores a verified acceptance-demo supplement into the clone and checks its ready-file references. Browser profiles and unrelated historical demo bindings are outside that supplement.
+
+Keep the separate stand, backup and reports for inspection. They contain private recovery material and stay ignored by Git. Do not use `down -v`, reset the main project, or start the native cluster as part of this exercise. Local recovery does not establish off-site retention, point-in-time recovery or a production disaster-recovery SLA.
+
+## Verified Docker recovery — 2026-11-12
+
+Fresh backup: `.local/backups/docker_20261112T112639Z_4a94e5e8`. Main API/importer and the separate stage-10 demo writer were stopped for the joint snapshot, then resumed. The snapshot completed at 11:31:30 UTC. The original database and app-data volumes were never used as restore destinations. Source-side `compose start` also restarted its existing migration dependency; it reported `Applied migrations: []`. The runbook now uses exact-container `docker start` to avoid that dependency restart in future.
+
+Retained restored project: `delivery-restore-20261112t113226z-b8796458`. Private Compose file and reports: `.local/restore-checks/20261112T113226Z_b8796458/`. The aggregate result is `recovery-verification.json`; the live restored API health endpoint is `http://127.0.0.1:3021/api/health`. The main API remains on 3001 and the stage-10 demo API on 3011. No frontend was switched to the restored API.
+
+Verified results:
+
+- All **314 tables** across `delivery_backoffice` (26), `odoo_mock` (10) and `delivery_backoffice_test` (278) matched their original row counts and complete row digests. Sequence state matched. Main contains 13 migrations, 27 deliveries, 36 appointments and 19 file records.
+- Main/source schema, constraints, indexes, ownership and ACL metadata matched exactly. Role attributes/password digests and database ownership, access privileges and role/database settings matched. The extra recovery bootstrap role is intentionally excluded from the original-role comparison.
+- Strict comparison correctly stopped for ten historical test-demo `person_check1` constraints: PostgreSQL flattened `((B AND C) AND D)` to `(B AND C AND D)`. Each exact before/after definition and every other attribute was checked. All **81** PostgreSQL three-valued cases of the surrounding expression matched. `constraint-review.json` resolves this formatting difference; raw `differences.json`, `failure.json` and the initial `verification.json` remain as evidence. No broad constraint-normalization exception was added to the helper.
+- All **21 main app-data files** were restored with matching names, sizes and SHA-256. The 18 ready file records have matching bytes; the one failed file record remains failed. Through normal operator authentication, all 27 delivery details, 382 delivery History entries and nine signed results matched the restored database. All 18 ready attachments downloaded successfully and matched SHA-256 (808,827 bytes total). Anonymous reads/downloads and invalid-Origin login were denied; the verification session was logged out.
+- A separately captured acceptance-demo supplement restored seven files: four photos and three private metadata files across two captured schemas. Each copied file hash and each ready-file reference matched. This supplements the empty bind-mount placeholder in app-data. Attachments for unrelated historical test schemas are not covered by this supplement.
+- The restored source reader can SELECT all source tables. Writes were denied by both the read-only transaction setting and table grants, including after disabling the read-only setting in a disposable clone session. Application-database connection and schema creation are denied.
+- Main business-table digests, fake Odoo and all 21 original application-data files remained unchanged. Every one of the original 4,259 audit rows was preserved; only normal `import.started`/`import.finished` entries were appended after resume. Background import/session tables resumed their ordinary activity. Main and restored backend/database containers were healthy; stage-10 API also returned HTTP 200.
+
+The new PowerShell helpers and the shared snapshot helper passed syntax parsing; the live restore, authenticated HTTP checks and source-reader negative checks are the meaningful validation for this change. No TypeScript/TSX implementation changed for recovery, so the application suites were not rerun; their earlier stage-10 results are recorded separately. No images, volumes, databases or backups were deleted. The drill is complete; physical-phone/PWA and wider pilot acceptance remain separate stage-10 work.
+
+Inspect the retained stand without relying on the shell's current Compose project:
+
+```powershell
+$run = Get-Content '.local/restore-checks/20261112T113226Z_b8796458/run.json' -Raw | ConvertFrom-Json
+docker compose --project-name $run.project --file $run.composeFile --profile restored ps
+docker compose --project-name $run.project --file $run.composeFile exec -T db psql -X -U backoffice_local_admin -d delivery_backoffice -c 'SELECT count(*) FROM delivery;'
+./scripts/docker-restore-api-check.ps1 -ProjectName $run.project -ComposeFile $run.composeFile -BackupDirectory $run.backupDirectory -ApiPort 3021
+```
+
+Fresh restore runs always get new targets. Do not rerun the file supplement against its already-populated destination. See the explicit equivalence review above if a repeat run stops on the same exact test constraint formatting; inspect any different mismatch independently. PostgreSQL documents preservation of database settings and access privileges under [`pg_restore --create`](https://www.postgresql.org/docs/18/app-pgrestore.html); the API's separate host-access network follows Docker's [multiple-network model](https://docs.docker.com/engine/network/).
 
 Latest vehicle-migration backup: `.local/backups/docker_20261104T150953Z_2075f529/docker-backup-manifest.json`, with `independent-vehicle-migration-verification.json`. All previous main rows/schema/ACL, source/test state and complete app-data matched immediately after the additive vehicle migration. The subsequent teaching source seed added only its three new records; all original source rows/schema also matched, including after repetition. Later normal API/import/browser changes are newer than this recovery point. An earlier participant-skills backup remains at `.local/backups/docker_20261104T125802Z_10dabf0b/docker-backup-manifest.json`. These are backup and migration-preservation checks, not a fresh full Docker restore drill. Recovery bundles contain private credentials and hashes; do not publish them. The following native instructions remain available for the preserved native environment only.
 

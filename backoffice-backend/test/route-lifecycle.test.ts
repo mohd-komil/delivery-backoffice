@@ -28,7 +28,7 @@ async function dataSnapshot(h: LifecycleFixture) {
 void test('stage 07: real Crew route access and explicit departure', async (context) => {
   const h = await lifecycleFixture();
   try {
-    await context.test('assigned route is private; only responsible/driver can depart after the next customer confirms', async () => {
+    await context.test('assigned route is private; its responsible participant can depart after the next customer confirms', async () => {
       const f = await h.fixture(); const route = await h.publish(f);
       const first = route.stops[0]; const second = route.stops[1]; assert.ok(first && second);
       const initial = RouteRevisionSchema.parse(await h.ok(`/routes/${route.id}/revisions/1`));
@@ -213,19 +213,23 @@ void test('stage 08: atomic route amendments, cancellation and retained history'
       assert.ok(state.status === 'cancelled' && visit.status === 'cancelled' || state.status === 'in_progress' && visit.status === 'booked');
     });
 
-    await context.test('detaching after a vehicle amendment restores original standalone transport without rewriting retired allocation history', async () => {
+    await context.test('driverless publication and amendment preserve and restore original standalone transport on detachment', async () => {
       const f = await h.fixture({ count: 1 }); const route = await h.publish(f, true, true); const stop = route.stops[0]; assert.ok(stop);
       const old = (await h.detail(stop.deliveryId)).delivery.appointments.find(({ id }) => id === stop.appointmentId); assert.ok(old);
-      const originalAllocation = old.transportAllocations?.find(({ status }) => status === 'active'); assert.ok(originalAllocation);
+      const originalAllocation = old.transportAllocations?.find(({ driver }) => driver.kind === 'participant'); assert.ok(originalAllocation);
+      assert.equal(originalAllocation.status, 'replaced');
+      assert.deepEqual(old.transportAllocations?.find(({ status }) => status === 'active')?.driver, { kind: 'none' });
       const replacement = await h.fixture({ count: 1 }); const state = await live(h, route.id);
       const changed = { version: state.version, reason: 'DEMO replacement van before loading', confirmNotLoaded: true, confirmNotDeparted: true,
         plan: { ...state.draft, vehicleId: replacement.vehicle.id }, responsibleParticipants: [{ appointmentId: stop.appointmentId, participantId: f.participant.id }] };
       const preview = RouteAmendReviewSchema.parse(await h.ok(`/routes/${route.id}/amend-review`, { method: 'POST', body: changed }));
       const amended = RouteOperationsSchema.parse(await h.ok(`/routes/${route.id}/amend`, { method: 'POST', body: { ...changed, requestId: randomUUID(), fingerprint: preview.fingerprint, acknowledgeEstimates: true } }));
+      assert.deepEqual(amended.resources.driver, { kind: 'none' });
       await h.ok(`/routes/${route.id}/cancel`, { method: 'POST', body: cancellation(amended.version) });
       const detached = (await h.detail(stop.deliveryId)).delivery.appointments.find(({ id }) => id === stop.appointmentId); assert.ok(detached);
       const restored = detached.transportAllocations?.filter(({ status }) => status === 'active'); assert.equal(restored?.length, 1);
       assert.equal(restored?.[0]?.vehicle.id, f.vehicle.id); assert.notEqual(restored?.[0]?.id, originalAllocation.id);
+      assert.deepEqual(restored?.[0]?.driver, originalAllocation.driver);
       assert.equal(detached.transportAllocations?.find(({ id }) => id === originalAllocation.id)?.status, 'replaced');
       assert.deepEqual(detached.customerConfirmation, old.customerConfirmation);
     });

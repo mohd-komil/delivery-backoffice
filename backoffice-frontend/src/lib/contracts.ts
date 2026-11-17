@@ -1,25 +1,36 @@
 import { z } from 'zod';
 import { inboxMapAreaResultSchema } from './inbox-map-area';
+import { lineWorkTimeSchema, savedWorkTimeSchema } from './work-times';
+import { serviceTypeSchema } from './service-types';
+export { serviceTypeSchema, type ServiceType } from './service-types';
 
 // Browser-owned runtime contracts mirror the HTTP API; no backend runtime is imported.
 const id = z.uuid();
 const instant = z.iso.datetime({ offset: true });
 const nullableText = z.string().nullable();
-export const serviceTypeSchema = z.enum(['delivery_only', 'delivery_installation', 'installation_only', 'collection_only']);
-export type ServiceType = z.infer<typeof serviceTypeSchema>;
+const issueTypeSchema = z.enum(['damage', 'missing_parts', 'access', 'other']);
+const returnStatusSchema = z.enum(['requested', 'planned', 'resolved']);
+export type IssueType = z.infer<typeof issueTypeSchema>;
+export type ActiveReturnStatus = Exclude<z.infer<typeof returnStatusSchema>, 'resolved'>;
 const servicePlanSchema = z.object({
   defaultService: serviceTypeSchema.nullable(),
-  overrides: z.array(z.object({ sourceLineId: z.number().int().positive(), service: serviceTypeSchema })),
+  defaultOrigin: z.enum(['source', 'local']).optional(),
+  overrides: z.array(z.object({ sourceLineId: z.number().int().positive(), service: serviceTypeSchema, origin: z.enum(['source', 'local']).optional() })),
+  timeEstimates: z.array(savedWorkTimeSchema).max(500)
+    .refine((lines) => new Set(lines.map((line) => line.sourceLineId)).size === lines.length, 'Work times must identify distinct source lines').optional(),
 });
 const milli = z.number().int().nonnegative();
 export const lineServiceSchema = z.object({
   sourceLineId: z.number().int().positive(), service: serviceTypeSchema.nullable(), inherited: z.boolean(), locked: z.boolean(),
+  serviceOrigin: z.enum(['source', 'local', 'unknown']).optional(),
+  requiredQuantitiesCustomized: z.boolean().optional(),
+  canEditRequiredQuantities: z.boolean().optional(),
   deliveredMilli: milli, installedMilli: milli, collectedMilli: milli,
   remainingDeliveryMilli: milli, remainingInstallationMilli: milli, remainingCollectionMilli: milli,
   totalDeliveryMilli: milli, totalInstallationMilli: milli, totalCollectionMilli: milli,
   reservedDeliveryMilli: milli, reservedInstallationMilli: milli, reservedCollectionMilli: milli,
   availableDeliveryMilli: milli, availableInstallationMilli: milli, availableCollectionMilli: milli,
-  planningBlockedReason: z.enum(['source_review', 'unknown_service', 'legacy_scope_review', 'scope_outdated', 'over_reserved', 'damage_hold']).nullable(),
+  planningBlockedReason: z.enum(['source_review', 'unknown_service', 'legacy_scope_review', 'scope_outdated', 'over_reserved', 'damage_hold', 'prior_work_review']).nullable(),
 });
 export type LineService = z.infer<typeof lineServiceSchema>;
 export const skillSnapshotSchema = z.object({ id, name: z.string().trim().min(1).max(200) });
@@ -35,7 +46,28 @@ const itemSchema = z.object({
   description: nullableText, quantity: z.number().nonnegative(), uom: z.string(), configuration: nullableText,
   ambient: nullableText, notes: nullableText, photoUrl: z.url().nullable(),
   saleOrderId: z.number().int().positive().optional(),
+  saleOrderLineId: z.number().int().positive().nullable().optional(),
+  orderLinkBasis: z.enum(['sale_order_line', 'procurement_group']).optional(),
+  sku: z.string().max(200).nullable().optional(), uomId: z.number().int().positive().optional(),
 });
+export const priorWorkRevisionSchema = z.object({
+  id, revision: z.number().int().positive(), sourceLineId: z.number().int().positive(),
+  pickingId: z.number().int().positive(), pickingName: z.string(), saleOrderId: z.number().int().positive(), saleOrderName: z.string(),
+  sourceItem: itemSchema, service: serviceTypeSchema,
+  deliveredMilli: milli, installedMilli: milli, collectedMilli: milli,
+  sourceReference: z.string(), reason: z.string(), acknowledgeCurrentPicking: z.literal(true),
+  confirmedAt: instant, confirmedBy: z.object({ id, name: z.string() }),
+});
+export type PriorWorkRevision = z.infer<typeof priorWorkRevisionSchema>;
+export const priorWorkLineSchema = z.object({
+  sourceLineId: z.number().int().positive(), status: z.enum(['unknown', 'confirmed', 'needs_review']), canEdit: z.boolean(),
+  blockedReason: z.enum(['delivery_closed', 'source_review', 'unknown_service', 'line_removed', 'planned_work', 'recorded_work']).nullable(),
+  priorDeliveredMilli: milli, priorInstalledMilli: milli, priorCollectedMilli: milli,
+  crewDeliveredMilli: milli, crewInstalledMilli: milli, crewCollectedMilli: milli,
+  current: priorWorkRevisionSchema.nullable(),
+});
+export type PriorWorkLine = z.infer<typeof priorWorkLineSchema>;
+const priorWorkSchema = z.object({ lines: z.array(priorWorkLineSchema), reviewRequired: z.boolean() });
 export const workLineSchema = z.object({
   sourceLineId: z.number().int().positive(), deliveryMilli: milli, installationMilli: milli, collectionMilli: milli,
   customerStockConfirmed: z.boolean().optional(),
@@ -53,11 +85,13 @@ export const workScopeSchema = z.object({
   }
 });
 export type WorkScope = z.infer<typeof workScopeSchema>;
-const sourceSchema = z.object({
+export const sourceSchema = z.object({
   pickingId: z.number().int().positive(), pickingName: z.string(), saleOrderId: z.number().int().positive(),
   saleOrderName: z.string(), sourceState: z.string(), salesTeam: z.string(),
   salesOrders: z.array(z.object({ id: z.number().int().positive(), name: z.string() })).min(1).max(100).optional(),
   customer: z.object({ id: z.number(), name: z.string(), address: nullableText, city: nullableText, country: nullableText,
+    addressSource: z.enum(['picking', 'move_order_shipping']).optional(),
+    postalCode: z.string().max(20).nullable().optional(), province: z.string().max(100).nullable().optional(),
     phones: z.array(z.string()), email: z.email().nullable(), contact: nullableText }),
   items: z.array(itemSchema), serviceType: nullableText, estimatedMinutes: z.number().nullable(), notes: nullableText,
 }).superRefine((source, context) => {
@@ -92,14 +126,31 @@ export const documentSnapshotSchema=z.object({id,name:z.string(),mime:z.string()
   documentPurpose:z.enum(['general','instruction','drawing']).nullable(),documentVersion:z.number().int().positive().nullable(),
   documentSource:z.literal('local_upload').nullable(),supersedesFileId:id.nullable(),uploadedBy:z.object({id,name:z.string()}).nullable(),
 });
+const quantityResultSchema = z.object({
+  sourceLineId: z.number(), deliveredMilli: milli, installedMilli: milli.optional(), collectedMilli: milli.optional(),
+});
+const signatureReviewReason = z.string().trim().min(1).max(2000);
+const reviewedQuantitySchema = quantityResultSchema.extend({ sourceLineId: z.number().int().positive() }).strict();
+const signatureReviewDecision = z.discriminatedUnion('decision', [
+  z.object({ decision: z.literal('approved') }),
+  z.object({ decision: z.literal('corrected'), quantities: z.array(reviewedQuantitySchema).min(1).max(500) }),
+]);
+export const signatureRefusalReviewCommandSchema = z.discriminatedUnion('decision', [
+  signatureReviewDecision.options[0].extend({ version: z.number().int().positive(), requestId: id, reason: signatureReviewReason }).strict(),
+  signatureReviewDecision.options[1].extend({ version: z.number().int().positive(), requestId: id, reason: signatureReviewReason }).strict(),
+]);
+const signatureRefusalReviewSchema = z.discriminatedUnion('decision', [
+  signatureReviewDecision.options[0].extend({ resultId: id, reason: signatureReviewReason, reviewedAt: instant, reviewedBy: z.object({ id, name: z.string() }) }),
+  signatureReviewDecision.options[1].extend({ resultId: id, reason: signatureReviewReason, reviewedAt: instant, reviewedBy: z.object({ id, name: z.string() }) }),
+]);
 const resultSchema = z.object({
   id, appointmentId: id, receivedAt: instant, actualStart: instant, actualEnd: instant, summary: z.string(),
   source: z.literal('crew_frontoffice').optional(),
   supersedesResultId: id.nullable(), correctionReason: nullableText,
   actor: z.object({ kind: z.literal('crew'), id, name: z.string() }), responsiblePersonId: id,
-  quantities: z.array(z.object({ sourceLineId: z.number(), deliveredMilli: milli, installedMilli: milli.optional(), collectedMilli: milli.optional() })),
+  quantities: z.array(quantityResultSchema),
   itemChecks: z.array(z.object({ sourceLineId: z.number().int().positive(), status: z.enum(['ok', 'problem']), note: z.string().trim().max(500).nullable(),
-    linkedIssueId: id.optional(), problemType: z.enum(['damage', 'missing_parts', 'access', 'other']).optional() })).max(500).optional(),
+    linkedIssueId: id.optional(), problemType: issueTypeSchema.optional() })).max(500).optional(),
   issueLinks: z.array(z.object({ sourceLineId: z.number().int().positive(), issueId: id })).optional(),
   incompleteWork: z.array(z.object({
     sourceLineId: z.number().int().positive(), operation: z.enum(['delivery', 'installation', 'collection']),
@@ -108,6 +159,7 @@ const resultSchema = z.object({
   }).refine((entry) => entry.reason !== 'other' || Boolean(entry.note), 'Other requires a note.')).max(1500).optional(),
   evidence: z.array(z.object({ id, type: z.enum(['assembly', 'damage', 'missing_parts', 'document', 'photo']), itemIds: z.array(z.number()) })),
   customerSignature: signatureSchema.nullable(), crewSignature: signatureSchema.nullable(),
+  signatureRefusal: z.object({ reason: signatureReviewReason, noPhotoReason: signatureReviewReason.optional() }).optional(),
   sourceSnapshot: sourceSchema, instructionsSnapshot: instructionsSchema, assignmentsSnapshot: z.array(assignmentSchema),
   transportSnapshot: z.array(transportAllocationSchema).max(20).optional(),
   workScopeSnapshot: workScopeSchema.optional(),
@@ -123,21 +175,23 @@ export const appointmentSchema = z.object({ id, startsAt: instant, endsAt: insta
   customerConfirmation: customerConfirmationSchema.optional(),
   responsibleParticipant: z.object({ id, name: z.string() }).optional(),
   failedAttempt: z.object({ reason: z.string().trim().min(1).max(2000), at: instant, actor: z.object({ id, name: z.string() }) }).optional(),
+  signatureRefusalReview: signatureRefusalReviewSchema.optional(),
   transportAllocations: z.array(transportAllocationSchema).max(200).optional(),
   workScope: workScopeSchema.optional(),
 });
 export type Appointment = z.infer<typeof appointmentSchema>;
-const issueSchema = z.object({ id, type: z.enum(['damage', 'missing_parts', 'access', 'other']), description: z.string(), itemIds: z.array(z.number()), photoIds: z.array(id), notes: nullableText,
+const issueSchema = z.object({ id, type: issueTypeSchema, description: z.string(), itemIds: z.array(z.number()), photoIds: z.array(id), notes: nullableText,
   status: z.enum(['open', 'resolved']), createdAt: instant, authorId: id, authorName: z.string(), source: z.enum(['operator', 'crew']), resolution: nullableText, resolvedAt: instant.nullable(), resolvedBy: id.nullable(), appointmentId: id.optional(), originResultId: id.optional() });
-const returnSchema = z.object({ id, originAppointmentId: id, reason: z.string(), remainingWork: z.string(), notes: nullableText, photoIds: z.array(id), issueIds: z.array(id), status: z.enum(['requested', 'planned', 'resolved']), appointmentId: id.nullable(), createdAt: instant, resolvedAt: instant.nullable(), resolution: nullableText });
+const returnSchema = z.object({ id, originAppointmentId: id, reason: z.string(), remainingWork: z.string(), notes: nullableText, photoIds: z.array(id), issueIds: z.array(id), status: returnStatusSchema, appointmentId: id.nullable(), createdAt: instant, resolvedAt: instant.nullable(), resolution: nullableText });
 export const deliverySchema = z.object({
   id, version: z.number().int().positive(), source: sourceSchema, sourceReview: z.boolean(), sourceChanged: z.boolean(),
   sourceWarnings: z.array(z.string()), instructions: instructionsSchema, appointments: z.array(appointmentSchema),
   servicePlan: servicePlanSchema.optional(),
+  priorWorkRevisions: z.array(priorWorkRevisionSchema).optional(),
   issues: z.array(issueSchema), returnRequests: z.array(returnSchema),
   workHolds: z.array(z.object({ id, sourceLineId: z.number().int().positive(), reason: z.literal('damage'), appointmentId: id.optional(), resultId: id.optional(), issueId: id.optional(),
     createdAt: instant, createdBy: z.object({ id, name: z.string() }), release: z.object({ at: instant, by: z.object({ id, name: z.string() }), note: z.string() }).optional() })).optional(),
-  completions: z.array(z.object({ id, at: instant, actorId: id, actorName: z.string(), sourceSnapshot: sourceSchema, resultIds: z.array(id), reopenedAt: instant.nullable(), reopenReason: nullableText })),
+  completions: z.array(z.object({ id, at: instant, actorId: id, actorName: z.string(), sourceSnapshot: sourceSchema, resultIds: z.array(id), priorWorkSnapshot: z.array(priorWorkRevisionSchema).optional(), reopenedAt: instant.nullable(), reopenReason: nullableText })),
   completedAt: instant.nullable(),
 });
 export type Delivery = z.infer<typeof deliverySchema>;
@@ -171,8 +225,10 @@ export const participantCalendarSchema = z.object({
   })),
 });
 export type ParticipantCalendarData = z.infer<typeof participantCalendarSchema>;
-export const workspaceSections = ['deliveries', 'routes', 'calendar', 'staffing', 'directory', 'imports', 'skills', 'vehicles'] as const;
+export const workspaceSections = ['deliveries', 'routes', 'decisions', 'calendar', 'staffing', 'directory', 'imports', 'skills', 'vehicles', 'planning'] as const;
 export type WorkspaceSection = typeof workspaceSections[number];
+export type DeliveryTab = 'overview' | 'visits' | 'issues' | 'files' | 'history';
+export type DeliveryFocus = { issueId: string | null; appointmentId: string | null; sourceLineId: number | null; resultId?: string | null };
 export const views = [
   { id: 'inbox', icon: '◫' },
   { id: 'planned', icon: '▦' },
@@ -184,15 +240,25 @@ export const views = [
   { id: 'completed', icon: '✓' },
 ] as const;
 export type View = typeof views[number]['id'];
-export const geographySchema = z.object({ city: nullableText, province: nullableText, postalCode: nullableText, source: z.literal('synthetic_fixture').nullable() });
+export const geographySchema = z.object({ city: nullableText, province: nullableText, postalCode: nullableText, source: z.enum(['synthetic_fixture', 'odoo']).nullable() });
 const geographyFacetSchema = z.object({ value: nullableText, count: z.number().int().nonnegative() });
 const geographyFacetsSchema = z.object({ cities: z.array(geographyFacetSchema), provinces: z.array(geographyFacetSchema), postalCodes: z.array(geographyFacetSchema) });
+const facetCount = z.number().int().nonnegative();
+const deliveryFilterFacetsSchema = z.object({
+  crews: z.array(z.object({ id, name: z.string(), count: facetCount })),
+  issueTypes: z.array(z.object({ value: issueTypeSchema, count: facetCount })),
+  returnStatuses: z.array(z.object({ value: returnStatusSchema.exclude(['resolved']), count: facetCount })),
+});
 const deliveryProgressSchema = z.enum(['inbox', 'planned', 'assigned', 'in_progress', 'partially_completed', 'awaiting_closure', 'completed']);
 export const remainingWorkEstimateSchema = z.object({
   minutes: z.number().int().nonnegative().nullable(),
   sourceMinutes: z.number().int().nonnegative().nullable(),
-  basis: z.enum(['proportional_remaining_operations', 'no_remaining_work', 'unknown']),
+  basis: z.enum(['proportional_remaining_operations', 'local_operation_rates', 'mixed_operation_rates', 'no_remaining_work', 'unknown']),
+  missingSourceLineIds: z.array(z.number().int().positive()).optional(),
+  staleSourceLineIds: z.array(z.number().int().positive()).optional(),
+  exceedsLimit: z.boolean().optional(),
 });
+export type RemainingWorkEstimate = z.infer<typeof remainingWorkEstimateSchema>;
 export const deliveryPlanningSchema = z.object({
   status: deliveryProgressSchema,
   activeVisits: z.array(z.object({
@@ -206,18 +272,24 @@ export const deliveryListSchema = z.object({
   total: z.number(), page: z.number(), pageSize: z.number(), counts: z.record(z.string(), z.number()),
   geographyFacets: geographyFacetsSchema.optional(),
   matchingGeographyFacets: geographyFacetsSchema.optional(),
+  filterFacets: deliveryFilterFacetsSchema.optional(),
   area: inboxMapAreaResultSchema.nullable().optional(),
 });
 export type DeliveryList = z.infer<typeof deliveryListSchema>;
-export const calendarSchema = z.array(z.object({ deliveryId: id, pickingName: z.string(), customerName: z.string(), appointment: appointmentSchema }));
+export const calendarSchema = z.array(z.object({ deliveryId: id, pickingName: z.string(), customerName: z.string(), geography: geographySchema.optional(), appointment: appointmentSchema }));
 export type CalendarEntry = z.infer<typeof calendarSchema>[number];
+export const calendarFilterCatalogSchema = z.object({
+  destinations: z.array(z.object({ city: nullableText, province: nullableText, postalCode: nullableText, count: z.number().int().positive() })),
+  crews: z.array(z.object({ id, name: z.string(), enabled: z.boolean() })),
+});
+export type CalendarFilterCatalog = z.infer<typeof calendarFilterCatalogSchema>;
 
 const databaseTime = z.string().refine((value) => Number.isFinite(new Date(value).getTime()), 'Invalid timestamp');
 export const fileSchema = documentSnapshotSchema.extend({ deliveryId: id, size: z.number(), kind: z.enum(['document', 'photo', 'evidence']), appointmentId: id.nullable(), issueId: id.nullable(), status: z.enum(['pending', 'ready', 'failed']), createdAt: databaseTime });
 export const auditSchema = z.object({ id, actorId: id, at: databaseTime, actorName: z.string(), action: z.string(), details: z.unknown() });
 export const appointmentPlanningSchema = z.object({ appointmentId: id, reviewReason: z.enum(['missing_scope', 'source_review', 'source_changed', 'work_changed', 'stock_pending', 'damage_hold']).nullable(), canEdit: z.boolean() });
 export type AppointmentPlanning = z.infer<typeof appointmentPlanningSchema>;
-export const detailSchema = z.object({ delivery: deliverySchema, views: z.array(z.string()), progress: z.enum(['inbox', 'planned', 'assigned', 'in_progress', 'partially_completed', 'awaiting_closure', 'completed']), coverage: z.object({ assigned: z.number().int(), total: z.number().int() }), deliveredQuantities: z.array(z.object({ sourceLineId: z.number().int(), deliveredMilli: z.number().int() })), lineServices: z.array(lineServiceSchema).optional(), appointmentPlanning: z.array(appointmentPlanningSchema).optional(), closureBlockers: z.array(z.string()), files: z.array(fileSchema), history: z.array(auditSchema) });
+export const detailSchema = z.object({ delivery: deliverySchema, views: z.array(z.string()), progress: z.enum(['inbox', 'planned', 'assigned', 'in_progress', 'partially_completed', 'awaiting_closure', 'completed']), coverage: z.object({ assigned: z.number().int(), total: z.number().int() }), deliveredQuantities: z.array(z.object({ sourceLineId: z.number().int(), deliveredMilli: z.number().int() })), lineServices: z.array(lineServiceSchema).optional(), lineWorkTimes: z.array(lineWorkTimeSchema).optional(), priorWork: priorWorkSchema.optional(), appointmentPlanning: z.array(appointmentPlanningSchema).optional(), closureBlockers: z.array(z.string()), files: z.array(fileSchema), history: z.array(auditSchema) });
 export type DeliveryDetail = z.infer<typeof detailSchema>;
 export const importSchema = z.object({ id, status: z.string(), startedAt: databaseTime, finishedAt: databaseTime.nullable(), processed: z.number(), error: nullableText, details: z.array(z.string()) });
 export type ImportRun = z.infer<typeof importSchema>;

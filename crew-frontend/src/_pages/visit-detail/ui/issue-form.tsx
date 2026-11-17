@@ -1,5 +1,8 @@
 'use client';
 
+import { Combobox } from '@/shared/ui/combobox';
+
+
 import { useTranslations } from 'next-intl';
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import type { VisitDetail } from '@/shared/api/contracts';
@@ -86,28 +89,26 @@ export function IssueForm({ visit, actions }: { visit: VisitDetail; actions: Vis
     form.reset();
   }
 
-  return <section className="panel detail-section" aria-labelledby="issue-heading">
-    <h2 id="issue-heading"><span className="section-icon"><Icon name="alert" size={17} /></span>{t('reportIssue')}</h2>
+  return <form className="issue-form" onSubmit={(event) => void submit(event)} aria-busy={actions.busy === 'issue'}>
     <p className="text-muted">{t('reportIssueDescription')}</p>
-    <form className="issue-form" onSubmit={(event) => void submit(event)} aria-busy={actions.busy === 'issue'}>
       <fieldset disabled={actions.busy !== null || visit.status !== 'in_progress'}>
         <div className="issue-fields">
           <label className="field" htmlFor="issue-type">
             <span>{t('issueType')}</span>
-            <select id="issue-type" name="type" value={issueType} onChange={(event)=>{
+            <Combobox id="issue-type" name="type" value={issueType} onChange={(event)=>{
               const next=issueTypes.find((type)=>type===event.currentTarget.value);if(next)setIssueType(next);
               if(error==='issueItemRequired')setError(null);
             }}>
               {issueTypes.map((type) => <option key={type} value={type}>{t(issueTypeLabels[type])}</option>)}
-            </select>
+            </Combobox>
           </label>
           {visit.items.length ? <label className="field" htmlFor="issue-item">
             <span>{t(issueType==='damage'?'issueDamageItem':'issueItem')}</span>
-            <select id="issue-item" name="item" defaultValue="" required={issueType==='damage'} aria-invalid={error==='issueItemRequired'||undefined}
+            <Combobox id="issue-item" name="item" defaultValue="" required={issueType==='damage'} aria-invalid={error==='issueItemRequired'||undefined}
               onChange={()=>{if(error==='issueItemRequired')setError(null);}}>
               <option value="">{t(issueType==='damage'?'issueItemRequired':'noIssueItem')}</option>
               {visit.items.map((item) => <option key={item.sourceLineId} value={item.sourceLineId}>{visitItemLabel(item,(line)=>t('productLine',{line}))}</option>)}
-            </select>
+            </Combobox>
           </label> : null}
         </div>
         <label className="field" htmlFor="issue-description">
@@ -135,6 +136,5 @@ export function IssueForm({ visit, actions }: { visit: VisitDetail; actions: Vis
           {actions.busy === 'issue' ? t('sendingIssue') : t('sendIssue')}<Icon name="arrowRight" size={16} />
         </Button>
       </fieldset>
-    </form>
-  </section>;
+  </form>;
 }

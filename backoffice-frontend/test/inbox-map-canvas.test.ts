@@ -14,6 +14,28 @@ const first: InboxMapPoint = { deliveryId: 'one', pickingName: 'DEMO/1', custome
 const samePoint: InboxMapPoint = { ...first, deliveryId: 'two', pickingName: '<img src=x onerror=alert(1)>', customerName: 'Second <script>customer</script>' };
 const remote: InboxMapPoint = { ...first, deliveryId: 'three', pickingName: 'DEMO/3', customerName: 'Third customer', latitude: 38.2, longitude: 15.5 };
 
+void test('an empty Inbox map reveals its first saved point and later Refresh retains that viewport', async () => {
+  const page = await domHarness(new ApiFixture());
+  let mounted: ReturnType<typeof mountInboxLeafletMap> | undefined;
+  try {
+    const leaflet = await import('leaflet');
+    const element = page.dom.window.document.createElement('div');
+    Object.defineProperties(element, { clientWidth: { value: 640 }, clientHeight: { value: 420 } });
+    page.container.append(element);
+    mounted = mountInboxLeafletMap(element, leaflet, () => undefined, () => undefined);
+    mounted.update([], '', labels);
+    mounted.update([first], '', labels);
+    const area = mounted.visibleArea();
+    assert.ok(area);
+    assert.ok(area.north > first.latitude && area.south < first.latitude && area.east > first.longitude && area.west < first.longitude);
+    assert.ok(area.east - area.west < 1, 'The first accepted point is shown at a useful local zoom');
+    mounted.zoomIn();
+    const zoomed = mounted.visibleArea();
+    mounted.update([structuredClone(first)], '', labels);
+    assert.deepEqual(mounted.visibleArea(), zoomed);
+  } finally { mounted?.destroy(); await page.close(); }
+});
+
 function rectangle(x: number, y: number, width: number, height: number): DOMRect {
   const values = { x, y, width, height, left: x, top: y, right: x + width, bottom: y + height };
   return { ...values, toJSON: () => ({ ...values }) };

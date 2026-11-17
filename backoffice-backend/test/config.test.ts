@@ -7,6 +7,17 @@ function environment(host = '127.0.0.1') {
   return { DATABASE_URL: url('delivery_backoffice'), TEST_DATABASE_URL: url('delivery_backoffice_test'), ODOO_DATABASE_URL: url('odoo_mock') };
 }
 
+function odooEnvironment(host = 'source.example.test', database = 'customer_snapshot') {
+  return {
+    ...environment(),
+    ODOO_SOURCE_MODE: 'odoo18',
+    ODOO_SOURCE_INSTANCE: 'customer-test-202611',
+    ODOO_SOURCE_ALLOWED_ENDPOINT: `postgresql://${host}:15433/${database}`,
+    ODOO_SOURCE_USER: 'source_reader',
+    ODOO_DATABASE_URL: `postgresql://source_reader:synthetic-password@${host}:15433/${database}`,
+  };
+}
+
 void test('host runtime defaults to loopback and preserves permitted localhost targets and custom API ports', () => {
   const defaultHost = parseEnvironment(environment());
   assert.equal(defaultHost.BACKOFFICE_RUNTIME, 'host');
@@ -95,6 +106,109 @@ void test('owned PostgreSQL schema isolation options remain valid without allowi
     isolated.searchParams.append('options', '-c search_path=another_schema');
     assert.throws(() => parseEnvironment({ ...base, ODOO_DATABASE_URL: isolated.toString() }));
   }
+});
+
+void test('Odoo 18 is explicitly selected and scoped to a separate source identity, destination and reader', () => {
+  const defaults = parseEnvironment(environment());
+  assert.equal(defaults.ODOO_SOURCE_MODE, 'mock');
+  assert.equal(defaults.ODOO_SOURCE_INSTANCE, 'odoo_mock');
+  const source = odooEnvironment();
+  const parsed = parseEnvironment(source);
+  assert.equal(parsed.ODOO_SOURCE_INSTANCE, 'customer-test-202611');
+  assert.equal(parsed.ODOO_SOURCE_TRANSPORT, 'tls');
+  assert.equal(parsed.ODOO_SOURCE_CA_FILE, undefined);
+  assert.equal(parseEnvironment({ ...source, ODOO_SOURCE_CA_FILE: 'C:/certificates/test-source-ca.pem' }).ODOO_SOURCE_CA_FILE, 'C:/certificates/test-source-ca.pem');
+  for (const key of ['ODOO_SOURCE_MODE', 'ODOO_SOURCE_INSTANCE', 'ODOO_SOURCE_ALLOWED_ENDPOINT', 'ODOO_SOURCE_USER'] as const) {
+    assert.throws(() => parseEnvironment({ ...source, [key]: undefined }), `Missing ${key} must not implicitly enable an external source`);
+    assert.throws(() => parseEnvironment({ ...source, [key]: '' }));
+  }
+  for (const mode of ['production', 'odoo', 'ODOO18', true]) assert.throws(() => parseEnvironment({ ...source, ODOO_SOURCE_MODE: mode }));
+  for (const instance of ['odoo_mock', 'source/one', ' source ', '../source', 'a'.repeat(81)]) assert.throws(() => parseEnvironment({ ...source, ODOO_SOURCE_INSTANCE: instance }));
+  assert.throws(() => parseEnvironment({ ...source, ODOO_SOURCE_USER: 'other_reader' }));
+  assert.throws(() => parseEnvironment({ ...source, ODOO_DATABASE_URL: source.ODOO_DATABASE_URL.replace(':synthetic-password', '') }));
+  assert.throws(() => parseEnvironment({ ...source, ODOO_SOURCE_CA_FILE: ' ' }));
+});
+
+void test('Odoo 18 rejects source redirects and malformed or credential-bearing endpoint approvals', () => {
+  const source = odooEnvironment();
+  for (const url of [
+    source.ODOO_DATABASE_URL.replace('source.example.test', 'another.example.test'),
+    source.ODOO_DATABASE_URL.replace(':15433/', ':15434/'),
+    source.ODOO_DATABASE_URL.replace('/customer_snapshot', '/another_snapshot'),
+    source.ODOO_DATABASE_URL.replace('postgresql:', 'postgres:'),
+    `${source.ODOO_DATABASE_URL}?host=another.example.test`,
+    `${source.ODOO_DATABASE_URL}?options=-c%20search_path=another_schema`,
+    `${source.ODOO_DATABASE_URL}?sslmode=disable`,
+    `${source.ODOO_DATABASE_URL}#fragment`,
+    `${source.ODOO_DATABASE_URL}?`,
+    `${source.ODOO_DATABASE_URL}#`,
+  ]) assert.throws(() => parseEnvironment({ ...source, ODOO_DATABASE_URL: url }), url);
+  for (const endpoint of [
+    source.ODOO_DATABASE_URL,
+    'postgresql://reader@source.example.test:15433/customer_snapshot',
+    'postgresql://source.example.test/customer_snapshot',
+    'postgresql://source.example.test:0/customer_snapshot',
+    'postgresql://source.example.test:15433/',
+    'postgresql://source.example.test:15433/customer_snapshot/other',
+    'postgresql://source.example.test:15433/customer%2Fsnapshot',
+    'postgresql://source.example.test:15433/customer_snapshot?sslmode=disable',
+    'postgresql://source.example.test:15433/customer_snapshot#fragment',
+    'postgresql://source.example.test:15433/customer_snapshot?',
+    'postgresql://source.example.test:15433/customer_snapshot#',
+    'postgresql://@source.example.test:15433/customer_snapshot',
+  ]) assert.throws(() => parseEnvironment({ ...source, ODOO_SOURCE_ALLOWED_ENDPOINT: endpoint }));
+});
+
+void test('the source opt-in cannot redirect application/test databases or use reserved database names', () => {
+  const source = odooEnvironment();
+  for (const key of ['DATABASE_URL', 'TEST_DATABASE_URL'] as const) {
+    assert.throws(() => parseEnvironment({ ...source, [key]: source.ODOO_DATABASE_URL }));
+    assert.throws(() => parseEnvironment({ ...source, [key]: source[key].replace(':55432/', ':5432/') }));
+    assert.throws(() => parseEnvironment({ ...source, [key]: `${source[key]}?host=source.example.test` }));
+  }
+  for (const name of ['delivery_backoffice', 'delivery_backoffice_test', 'odoo_mock']) {
+    assert.throws(() => parseEnvironment(odooEnvironment('source.example.test', name)));
+  }
+  const docker = parseEnvironment({ ...source, ...environment('db'), ODOO_DATABASE_URL: source.ODOO_DATABASE_URL, BACKOFFICE_RUNTIME: 'docker' });
+  assert.equal(docker.HOST, '0.0.0.0');
+  assert.equal(docker.DATABASE_URL, environment('db').DATABASE_URL);
+  assert.equal(docker.ODOO_DATABASE_URL, source.ODOO_DATABASE_URL);
+});
+
+void test('internal LAN transport requires explicit selection and an exact private destination', () => {
+  for (const host of ['source.example.local', 'SOURCE.local', '10.0.0.1', '10.255.255.254', '172.16.0.1', '172.31.255.254', '192.168.1.2']) {
+    const source = odooEnvironment(host);
+    assert.equal(parseEnvironment(source).ODOO_SOURCE_TRANSPORT, 'tls', 'LAN hostnames must not silently disable TLS');
+    assert.equal(parseEnvironment({ ...source, ODOO_SOURCE_TRANSPORT: 'internal-lan' }).ODOO_SOURCE_TRANSPORT, 'internal-lan');
+    assert.throws(() => parseEnvironment({ ...source, ODOO_SOURCE_TRANSPORT: 'internal-lan', ODOO_SOURCE_CA_FILE: '/certs/source-ca.pem' }));
+  }
+  for (const host of ['source.example.test', 'localhost', 'db', 'host.docker.internal', 'local', 'source.local.example', 'source.local.', '127.0.0.1', '169.254.169.254', '172.15.1.1', '172.32.1.1', '192.169.1.1', '8.8.8.8', '10.0.0.999', '[::1]', '[fd00::1]']) {
+    assert.throws(() => parseEnvironment({ ...odooEnvironment(host), ODOO_SOURCE_TRANSPORT: 'internal-lan' }), host);
+  }
+  for (const transport of ['false', 'disable', '', 'production', true]) assert.throws(() => parseEnvironment({ ...odooEnvironment(), ODOO_SOURCE_TRANSPORT: transport }));
+});
+
+void test('mock mode cannot accidentally accept partial external-source settings', () => {
+  const external = odooEnvironment();
+  for (const key of ['ODOO_SOURCE_INSTANCE', 'ODOO_SOURCE_ALLOWED_ENDPOINT', 'ODOO_SOURCE_USER'] as const) {
+    assert.throws(() => parseEnvironment({ ...environment(), [key]: external[key] }));
+  }
+  assert.throws(() => parseEnvironment({ ...environment(), ODOO_SOURCE_TRANSPORT: 'internal-lan' }));
+  assert.throws(() => parseEnvironment({ ...environment(), ODOO_SOURCE_CA_FILE: '/certs/source-ca.pem' }));
+});
+
+void test('separate integration UI origins are exact loopback origins available only in Odoo 18 mode', () => {
+  for (const host of ['127.0.0.1', 'localhost']) {
+    const frontend = `http://${host}:3030`;
+    const crew = `http://${host}:3032`;
+    const parsed = parseEnvironment({ ...odooEnvironment(), FRONTEND_ORIGIN: frontend, CREW_FRONTEND_ORIGIN: crew });
+    assert.equal(parsed.FRONTEND_ORIGIN, frontend);
+    assert.equal(parsed.CREW_FRONTEND_ORIGIN, crew);
+    assert.throws(() => parseEnvironment({ ...environment(), FRONTEND_ORIGIN: frontend, BACKOFFICE_TEST: '1' }));
+    assert.throws(() => parseEnvironment({ ...environment(), CREW_FRONTEND_ORIGIN: crew, BACKOFFICE_TEST: '1' }));
+  }
+  for (const origin of ['http://remote.example:3030', 'http://127.0.0.1:3030/', 'http://127.0.0.1:3032', '*']) assert.throws(() => parseEnvironment({ ...odooEnvironment(), FRONTEND_ORIGIN: origin }));
+  assert.throws(() => parseEnvironment({ ...odooEnvironment(), CREW_FRONTEND_ORIGIN: 'http://remote.example:3032' }));
 });
 
 void test('config/applicationUrl share the explicitly selected Docker runtime without changing NODE_ENV policy', { concurrency: false }, () => {

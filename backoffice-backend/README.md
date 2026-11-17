@@ -1,5 +1,13 @@
 # Delivery Backoffice backend
 
+Задачи 14, 16 и 17: [ранее выполненные работы](docs/prior-work.md), [сверка повторных импортов](docs/source-reconciliation.md) и [очередь решений диспетчера](docs/dispatcher-queue.md). [Общие справочники планирования](docs/planning-references.md) описывают смены/отсутствия, точки выезда и возврата, нормативы времени и их связь с Routes.
+
+13 ноября 2026: текущий стенд `delivery-odoo-customerdev` обновлён до 19 миграций. Backoffice — `http://127.0.0.1:3030`, API — `http://127.0.0.1:3031/api`. Все 790 доставок сохранены без изменения JSON; записи в Odoo и повторного внешнего импорта не было. Backend: 374/374 теста на изолированной PostgreSQL, strict typecheck, typed lint и build прошли. [Проверки интерфейса, резервная копия и команды перезапуска](docs/planning-references.md#final-verification-and-runtime--2026-11-13).
+
+Этап 10: [сквозная проверка двух Picking, частичной доставки, Customer absent, повторов и оставшейся работы](docs/stage10-acceptance.md). В документе — ожидаемые количества, результаты проверок, команды отдельного демо и незакрытые критерии полного этапа.
+
+12 ноября 2026: [восстановление свежей Docker-копии в отдельный стенд](docs/recovery.md#verified-docker-recovery--2026-11-12) проверено на текущих 13 миграциях. Три базы, файлы, подписанные отчёты и History восстановлены; основной стенд сохранён. Копия API: `http://127.0.0.1:3021/api/health`.
+
 Этапы 07–09: опубликованные рейсы в Crew, выезд, изменение и отмена с историей, фактический возврат, разбор остатков и отдельная складская приёмка. Контракты, ограничения и запуск демо описаны в [route-lifecycle-implementation.md](docs/route-lifecycle-implementation.md). Закрытие рейса не закрывает Picking и не подтверждает приёмку товара складом автоматически.
 
 Participants, Crews and Task templates: [CRUD API, deletion rules and verification](docs/directory-crud.md).
@@ -12,7 +20,7 @@ Participants, Crews and Task templates: [CRUD API, deletion rules and verificati
 
 Локальный учебный NestJS / TypeORM / PostgreSQL backend по [плану Notion v0.2](https://app.notion.com/p/40c4433fac0f815ab7e5fb9257f22047). Fake Odoo — синтетическая модель, не подтверждённая схема клиента.
 
-## Основной локальный запуск — Docker
+## Учебный стенд fake Odoo — Docker
 
 Backend и PostgreSQL с базами `delivery_backoffice`, `delivery_backoffice_test` и `odoo_mock` работают через Compose. Frontend запускается отдельно на хосте. Существующие данные уже перенесены; повторный seed для них не нужен.
 
@@ -232,4 +240,10 @@ Backend: **80/80 тестов**, typecheck, typed lint, build и OpenAPI — PAS
 ```
 
 Первый пример создал 6 навыков и выполнил 2 изменения metadata, повтор — 0/0. В браузере дополнительно создан Heavy lifting и Antonio сохранены Heavy lifting + Product inspection; это вымышленные учебные сведения. Команды не меняют прежние визиты, составы бригад, контакты, пароли или подписанную историю. Точные UUID, правила API, backup и границы проверки — в [participant-skills.md](docs/participant-skills.md).
+
+## Odoo development-copy integration
+
+The optional read-only Odoo 18 adapter runs in a separate local Docker stand; the teaching demo remains independent. Configuration, confirmed field mappings, unknowns and startup commands are documented in [docs/odoo-integration.md](docs/odoo-integration.md). Source credentials belong only in the private local configuration, never in this repository.
+
+Import automatically locates eligible text addresses with Geoapify and caches them in the application database without changing Odoo. It skips placeholders and reuses saved coordinates. Backend-only key configuration, processing limits, the separate Docker mount and approximate-result review are documented in [docs/geocoding.md](docs/geocoding.md).
 

@@ -253,7 +253,7 @@ void test('Inbox geography choices do not filter other views and are restored wh
     const planned = reply(api, '?view=planned&page=1', deliveries('DEMO/PLANNED', 1, 1));
     await click(viewButton(document, 'Planned'));
     await waitFor(() => planned.called && document.querySelector('.delivery-table')?.textContent?.includes('DEMO/PLANNED') === true, 'unfiltered Planned view');
-    assert.equal(Array.from(document.querySelectorAll('label')).some((entry) => entry.firstElementChild?.textContent === 'City'), false);
+    assert.equal(field(document, 'City').value, '');
     const inbox = reply(api, '?view=inbox&page=1&city=Catania', deliveries('DEMO/RETURNED', 1, 15, 'catania'));
     await click(viewButton(document, 'Inbox to plan'));
     await waitFor(() => inbox.called && document.querySelector('.delivery-table')?.textContent?.includes('DEMO/RETURNED') === true, 'restored Inbox');

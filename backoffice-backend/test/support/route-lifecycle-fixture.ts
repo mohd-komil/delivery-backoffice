@@ -40,7 +40,7 @@ class LifecycleFiles extends Files {
 
 export const DeliveryDetail = z.object({ delivery: DeliverySchema, lineServices: z.array(LineServiceStatusSchema), history: z.array(AuditSchema) });
 export const ErrorCode = z.object({ code: z.string() });
-type RequestOptions = { method?: 'GET' | 'POST' | 'PATCH'; body?: unknown; cookie?: string; origin?: string };
+type RequestOptions = { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; cookie?: string; origin?: string };
 type Quantity = z.infer<typeof QuantityResultSchema>;
 
 export async function lifecycleFixture() {
@@ -97,7 +97,7 @@ export async function lifecycleFixture() {
     return ParticipantSchema.parse(await ok('/participants', { method: 'POST', cookie: adminCookie,
       body: { firstName: 'DEMO', lastName: label, login: `lifecycle-${ordinal}@example.test`, password } }));
   }
-  async function fixture(options: { count?: number; buffer?: number; service?: 'delivery_only' | 'delivery_installation' | 'collection_only'; departAt?: string } = {}) {
+  async function fixture(options: { count?: number; buffer?: number; service?: 'delivery_only' | 'delivery_installation' | 'collection_only'; departAt?: string; lineQuantity?: number } = {}) {
     const participant = await person('Marco Rossi');
     const colleague = await person('Luca Bianchi');
     const label = ordinal;
@@ -116,7 +116,7 @@ export async function lifecycleFixture() {
         salesOrders: [{ id: orderId, name: `SO/${orderId}` }, { id: orderId + 1, name: `SO/${orderId + 1}` }], sourceState: 'assigned', salesTeam: 'DEMO',
         customer: { id: sourceId, name: 'DEMO client', address: `Piazza Test ${index + 1}`, city: 'Catania', country: 'IT', phones: ['+39000000001'], email: null, contact: null },
         items: [31, 32].map((sourceLineId, offset) => ({ sourceLineId, saleOrderId: orderId + offset, productId: 7, name: 'DEMO identical chair',
-          quantity: 2, uom: 'unit', description: null, configuration: null, ambient: null, notes: null, photoUrl: null })),
+          quantity: options.lineQuantity ?? 2, uom: 'unit', description: null, configuration: null, ambient: null, notes: null, photoUrl: null })),
         serviceType: service, estimatedMinutes: 60, notes: null }, randomUUID());
       delivery.routePoint = { latitude: 37.50 - index * 0.01, longitude: 15.084 };
       await database.source.query('INSERT INTO delivery(id,source_instance,source_id,version,data) VALUES($1,$2,$3,$4,$5::jsonb)',
@@ -209,7 +209,10 @@ export async function lifecycleFixture() {
       assert.equal(reply.status, 201); const cookie = reply.headers.get('set-cookie')?.split(';')[0]; assert.ok(cookie);
       if (role === 'admin') adminCookie = cookie; else operatorCookie = cookie;
     }
-    return { schema, database, request, ok, person, fixture, publish, confirm, detail, start, finish, login, close, adminCookie, operatorCookie };
+    function downloadEvidence(deliveryId: string, fileId: string, cookie = operatorCookie) {
+      return fetch(`${base}/api/deliveries/${deliveryId}/files/${fileId}`, { headers: { Cookie: cookie } });
+    }
+    return { schema, database, request, ok, person, fixture, publish, confirm, detail, start, finish, login, close, adminCookie, operatorCookie, downloadEvidence };
   } catch (error: unknown) { await close(); throw error; }
 }
 

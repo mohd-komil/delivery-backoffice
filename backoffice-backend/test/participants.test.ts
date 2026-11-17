@@ -142,8 +142,8 @@ void test('participant directory and visit staffing use real HTTP guards and iso
     const store = module.get<DeliveryStore>(DeliveryStore);
     const gateway = module.get<Execution>(Execution);
     const identity = module.get<Identity>(Identity);
-    async function request(route: string, method = 'GET', body?: unknown, cookie?: string) {
-      const headers: Record<string, string> = { Origin: config().FRONTEND_ORIGIN };
+    async function request(route: string, method = 'GET', body?: unknown, cookie?: string, origin: string = config().FRONTEND_ORIGIN) {
+      const headers: Record<string, string> = { Origin: origin };
       if (cookie) headers['Cookie'] = cookie;
       if (method !== 'GET') headers['Content-Type'] = 'application/json';
       const response = await fetch(`${base}/api${route}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -155,8 +155,8 @@ void test('participant directory and visit staffing use real HTTP guards and iso
       assert.ok(reply.status >= 200 && reply.status < 300, `${method} ${route}: ${reply.status} ${JSON.stringify(reply.raw)}`);
       return reply.raw;
     }
-    async function failure(route: string, status: number, method = 'GET', body?: unknown, cookie?: string) {
-      const reply = await request(route, method, body, cookie);
+    async function failure(route: string, status: number, method = 'GET', body?: unknown, cookie?: string, origin: string = config().FRONTEND_ORIGIN) {
+      const reply = await request(route, method, body, cookie, origin);
       assert.equal(reply.status, status, `${method} ${route}: ${JSON.stringify(reply.raw)}`);
       return reply.raw;
     }
@@ -190,27 +190,30 @@ void test('participant directory and visit staffing use real HTTP guards and iso
         address: person.address, login: person.login, external: person.external, enabled: person.enabled, ...changes };
     }
 
-    await context.test('participant authentication, admin writes, strict fields, case-insensitive logins and password privacy/preservation', async () => {
+    await context.test('participant authentication, operator writes, strict fields, case-insensitive logins and password privacy/preservation', async () => {
+      const backofficeUsers=await rows(database.source.manager,z.object({id:z.string(),role:z.string(),password_hash:z.string()}),'SELECT id,role,password_hash FROM app_user ORDER BY id');
       await failure('/participants', 401);
       await failure('/participants', 401, 'POST', { firstName: 'DEMO', lastName: 'Anonymous' });
-      await failure('/participants', 403, 'POST', { firstName: 'DEMO', lastName: 'Forbidden' }, operatorCookie);
+      await failure('/participants', 403, 'POST', { firstName: 'DEMO', lastName: 'Wrong origin' }, operatorCookie,'https://untrusted.example');
       await failure('/participants', 400, 'POST', { firstName: '', lastName: 'Invalid' }, adminCookie);
-      await failure('/participants', 400, 'POST', { firstName: 'DEMO', lastName: 'Invalid', role: 'admin' }, adminCookie);
+      await failure('/participants', 400, 'POST', { firstName: 'DEMO', lastName: 'Invalid', role: 'admin' }, operatorCookie);
+      await failure('/participants', 400, 'POST', { firstName: 'DEMO', lastName: 'Invalid hash', password_hash: 'not-an-accepted-field' }, operatorCookie);
       await failure('/participants', 400, 'POST', { firstName: 'DEMO', lastName: 'Invalid', login: 'login-without-password' }, adminCookie);
       await failure('/participants', 400, 'POST', { firstName: 'DEMO', lastName: 'Short password', login: 'short-password', password: randomBytes(20).toString('base64url').slice(0, 14) }, adminCookie);
       const crewPassword = randomBytes(20).toString('base64url');
       const raw = await success('/participants', 'POST', { firstName: 'DEMO', lastName: 'Technician', preferredName: 'DEMO specialist', phoneNumber: '+390000000099',
-        address: 'DEMO address', login: 'Technician@example.test', password: crewPassword, external: true }, adminCookie);
+        address: 'DEMO address', login: 'Technician@example.test', password: crewPassword, external: true }, operatorCookie);
       let person = ParticipantSchema.parse(raw);
       const publicRecord = z.record(z.string(), z.unknown()).parse(raw);
       for (const secret of ['password', 'passwordHash', 'password_hash']) assert.equal(Object.hasOwn(publicRecord, secret), false);
       assert.equal(JSON.stringify(raw).includes(crewPassword), false); assert.equal(person.hasPassword, true);
       await failure('/participants', 409, 'POST', { firstName: 'DEMO', lastName: 'Other', login: 'tECHNICIAN@example.test', password: randomBytes(20).toString('base64url') }, adminCookie);
-      await failure('/participants/' + person.id, 403, 'PATCH', updateBody(person), operatorCookie);
+      await failure('/participants/' + person.id, 400, 'PATCH', {version:person.version,firstName:person.firstName,lastName:person.lastName}, operatorCookie);
+      await failure('/participants/' + person.id, 400, 'PATCH', updateBody(person,{role:'admin'}), operatorCookie);
       const beforeHash = (await rows(database.source.manager, z.object({ password_hash: z.string() }), 'SELECT password_hash FROM person WHERE id=$1', [person.id]))[0]?.password_hash;
       assert.ok(beforeHash); assert.equal(await verifyPassword(crewPassword, beforeHash), true);
       const oldVersion = person.version;
-      person = ParticipantSchema.parse(await success('/participants/' + person.id, 'PATCH', updateBody(person, { phoneNumber: '+390000000098' }), adminCookie));
+      person = ParticipantSchema.parse(await success('/participants/' + person.id, 'PATCH', updateBody(person, { phoneNumber: '+390000000098' }), operatorCookie));
       assert.equal(person.version, oldVersion + 1);
       assert.ok((await rows(database.source.manager, z.object({ password_hash: z.string() }), 'SELECT password_hash FROM person WHERE id=$1', [person.id]))[0]?.password_hash === beforeHash, 'Omitting a password must retain the stored hash');
       await failure('/participants/' + person.id, 400, 'PATCH', updateBody(person, { password: '' }), adminCookie);
@@ -227,13 +230,15 @@ void test('participant directory and visit staffing use real HTTP guards and iso
       assert.equal(databaseRejectedDuplicate, true, 'PostgreSQL must enforce case-insensitive login uniqueness independently of HTTP validation');
       await failure('/participants/' + person.id, 409, 'PATCH', { ...updateBody(person), version: oldVersion }, adminCookie);
       const replacementPassword = randomBytes(20).toString('base64url').slice(0, 15);
-      person = ParticipantSchema.parse(await success('/participants/' + person.id, 'PATCH', updateBody(person, { password: replacementPassword }), adminCookie));
+      person = ParticipantSchema.parse(await success('/participants/' + person.id, 'PATCH', updateBody(person, { password: replacementPassword }), operatorCookie));
       const newHash = (await rows(database.source.manager, z.object({ password_hash: z.string() }), 'SELECT password_hash FROM person WHERE id=$1', [person.id]))[0]?.password_hash;
       assert.ok(newHash); assert.ok(newHash !== beforeHash, 'An explicit new password must replace the hash');
       assert.equal(await verifyPassword(replacementPassword, newHash), true);
       assert.equal(await verifyPassword(crewPassword, newHash), false);
       const loginResult = await request('/auth/login', 'POST', { email: 'technician@example.test', password: replacementPassword });
       assert.equal(loginResult.status, 401, 'Crew credentials must never grant a backoffice session');
+      assert.deepEqual(await rows(database.source.manager,z.object({id:z.string(),role:z.string(),password_hash:z.string()}),'SELECT id,role,password_hash FROM app_user ORDER BY id'),backofficeUsers,
+        'Participant CRUD cannot alter Backoffice users, roles or passwords');
       const listed = z.array(ParticipantSchema).parse(await success('/participants'));
       assert.ok(listed.some((entry) => entry.id === person.id && entry.hasPassword));
       assert.equal(JSON.stringify(listed).includes(beforeHash), false);
@@ -253,10 +258,13 @@ void test('participant directory and visit staffing use real HTTP guards and iso
       return request(`/deliveries/${delivery.id}/appointments/${visit(booked).id}/assign`, 'POST', { version: booked.delivery.version, requestId: randomUUID(), crewIds, templateIds: [template.id], ...(staffing ? { staffing } : {}) }, operatorCookie);
     }
 
-    await context.test('exclusive default rosters use real admin rights, UUID identity, retained membership and clear bounded conflict names', async () => {
+    await context.test('exclusive default rosters use authenticated Backoffice rights, UUID identity, retained membership and clear bounded conflict names', async () => {
       const crewBody = { name: 'DEMO restricted roster', classification: 'indoor', area: 'DEMO area', enabled: true, participantIds: [] };
       await failure('/crews', 401, 'POST', crewBody);
-      await failure('/crews', 403, 'POST', crewBody, operatorCookie);
+      const operatorCrew=CrewSchema.parse(await success('/crews','POST',{...crewBody,name:'DEMO operator roster'},operatorCookie));
+      const operatorUpdated=CrewSchema.parse(await success(`/crews/${operatorCrew.id}`,'PATCH',{...crewBody,name:'DEMO operator roster revised',version:operatorCrew.version},operatorCookie));
+      assert.equal(operatorUpdated.version,2);
+      await failure('/crews',403,'POST',crewBody,operatorCookie,'https://untrusted.example');
       await failure('/crews/not-a-uuid', 400, 'PATCH', { ...crewBody, version: 1 }, adminCookie);
       await failure('/crews', 400, 'POST', { ...crewBody, name: 'x'.repeat(2001) }, adminCookie);
       await failure('/crews', 404, 'POST', { ...crewBody, participantIds: [randomUUID()] }, adminCookie);
@@ -266,7 +274,7 @@ void test('participant directory and visit staffing use real HTTP guards and iso
       const named = await participant('Boundary profile', { preferredName: boundedName });
       let original = await crew(boundedCrewName, [named.id.toUpperCase()]);
       const savedBody = { version: original.version, name: original.name, classification: original.classification, area: original.area, enabled: false, participantIds: [named.id.toUpperCase()] };
-      await failure('/crews/' + original.id, 403, 'PATCH', savedBody, operatorCookie);
+      await failure('/crews/' + original.id, 403, 'PATCH', savedBody, operatorCookie,'https://untrusted.example');
       await failure('/crews/' + original.id, 400, 'PATCH', { ...savedBody, participantIds: [named.id, named.id.toUpperCase()] }, adminCookie);
       original = CrewSchema.parse(await success('/crews/' + original.id.toUpperCase(), 'PATCH', savedBody, adminCookie));
       assert.deepEqual(original.people.map((person) => person.id), [named.id]);
@@ -440,7 +448,7 @@ void test('participant directory and visit staffing use real HTTP guards and iso
         await failure(route, 401, 'GET', undefined, crewCookie);
         await failure(route, 401, 'DELETE', { version: entry.record.version });
         await failure(route, 401, 'DELETE', { version: entry.record.version }, crewCookie);
-        await failure(route, 403, 'DELETE', { version: entry.record.version }, operatorCookie);
+        await failure(route, 403, 'DELETE', { version: entry.record.version }, operatorCookie,'https://untrusted.example');
         await failure(route, 400, 'DELETE', { version: 0 }, adminCookie);
         await failure(route, 400, 'DELETE', { version: entry.record.version, force: true }, adminCookie);
         await failure(route, 409, 'DELETE', { version: entry.record.version + 1 }, adminCookie);
@@ -450,7 +458,7 @@ void test('participant directory and visit staffing use real HTTP guards and iso
         assert.equal(crossOrigin.status, 403); await crossOrigin.arrayBuffer();
         const preflight = await fetch(`${base}/api${route}`, { method: 'OPTIONS', headers: { Origin: config().FRONTEND_ORIGIN, 'Access-Control-Request-Method': 'DELETE', 'Access-Control-Request-Headers': 'content-type' } });
         assert.match(preflight.headers.get('access-control-allow-methods') ?? '', /DELETE/); await preflight.arrayBuffer();
-        const deleted = DirectoryDeletionSchema.parse(await success(route, 'DELETE', { version: entry.record.version }, adminCookie));
+        const deleted = DirectoryDeletionSchema.parse(await success(route, 'DELETE', { version: entry.record.version }, operatorCookie));
         assert.deepEqual(deleted, { id: entry.record.id, deleted: true });
         await failure(route, 404, 'GET', undefined, adminCookie);
         await failure(route, 404, 'DELETE', { version: entry.record.version }, adminCookie);

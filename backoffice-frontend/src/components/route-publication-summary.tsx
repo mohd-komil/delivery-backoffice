@@ -5,6 +5,7 @@ import type { Delivery, WorkScope } from '@/lib/contracts';
 import type { PublicationReview } from '@/lib/route-publication';
 import { formatDateTime } from '@/lib/time';
 import { workOperations } from '@/lib/visit-work';
+import { RouteReferenceFacts } from './route-reference-facts';
 
 export function ScopeSummary({ scope, source }: { scope: WorkScope; source?: Delivery['source'] }) {
   const t = useTranslations('routePublication');
@@ -18,6 +19,7 @@ export function FrozenPublication({ review, confirmationLabel }: { review: Publi
   const t = useTranslations('routePublication');
   const locale = useLocale();
   return <section className="grid gap-3">
+    <RouteReferenceFacts preview={review} />
     <p className="text-xs text-info-foreground">{t('estimate')}</p>
     <dl className="grid gap-2 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">{t('departure')}</dt><dd>{formatDateTime(review.timeline.departAt, locale)}</dd></div><div><dt className="text-muted-foreground">{t('return')}</dt><dd>{review.timeline.returnAt ? formatDateTime(review.timeline.returnAt, locale) : '—'}</dd></div></dl>
     <ol className="grid gap-3">{review.stops.map((stop, index) => <li key={stop.appointmentId} className="rounded-md border p-3">

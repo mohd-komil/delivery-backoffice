@@ -12,7 +12,7 @@ Implementation date: 2026-11-11. This extends [the publication contract](route-p
 - Actual return replaces the raw reservation end. It must follow publication/departure and cannot be in the future. Missing reports, incomplete reconciliation or a future booking never prevent recording the physical fact.
 - Route closure does not complete a Picking, fabricate quantities, release damage holds, create orders or write to Odoo.
 
-The route responsible participant is explicitly derived from the first stop's reviewed responsible participant. That person and an assigned participant-driver may depart or record return. Current assigned participants may read the route. Dispatchers can perform operational actions with a reason. Removed participants immediately lose route access.
+The route responsible participant is explicitly derived from the first stop's reviewed responsible participant. That person records departure and return. For a previously published route, an assigned participant-driver retains these permissions until the route is amended. Current assigned participants may read the route. Dispatchers can perform operational actions with a reason. Removed participants immediately lose route access.
 
 ## Crew (07)
 
@@ -28,9 +28,9 @@ Starting a later stop before the preceding stop finishes or is skipped is reject
 
 ## Reviewed changes and cancellation (08)
 
-`POST /routes/:id/amend-review` accepts the current route version, reason, both attestations, a complete proposed route plan, exact per-appointment responsible participant selection and an external driver phone when applicable. It returns a fingerprint, estimated complete-trip feasibility and the appointments whose confirmation will be reset.
+`POST /routes/:id/amend-review` accepts the current route version, reason, both attestations, a complete proposed route plan and exact per-appointment responsible participant selection. It returns a fingerprint, estimated complete-trip feasibility and the appointments whose confirmation will be reset.
 
-`POST /routes/:id/amend` adds `requestId`, that fingerprint and `acknowledgeEstimates:true`. It is atomic. Changed source versions, work or dependencies require a new review. The current implementation preserves the exact appointment set and work quantities; it supports order, duration, departure, customer windows, crew, actual people, vehicle, driver and responsible participant changes. New stop insertion and cargo transfer between departed vehicles are outside this amendment command.
+`POST /routes/:id/amend` adds `requestId`, that fingerprint and `acknowledgeEstimates:true`. It is atomic. Changed source versions, work or dependencies require a new review. The current implementation preserves the exact appointment set and work quantities and supports changes to order, duration, departure, customer windows, crew, actual people, vehicle and responsible participants. The applied revision uses a shared vehicle allocation without a driver. New stop insertion and cargo transfer between departed vehicles are outside this amendment command.
 
 Task/checklist IDs and snapshots are retained; every proposed participant is checked against saved task requirements. Appointment intervals follow the reviewed timeline. Changed appointment intervals or customer window semantics reset customer confirmation. Active transport allocations are retired with history and replaced; they are not silently overwritten.
 

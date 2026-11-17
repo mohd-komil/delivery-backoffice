@@ -7,6 +7,7 @@ import { GeoPointSchema, IdSchema, InstantSchema, type Delivery, type OperatorAc
 import { DomainError } from '../domain/rules';
 import { DeliveryStore } from '../operations/store';
 import { DeliveryPoints } from '../operations/delivery-points';
+import { GeocodingMetadataSchema } from './geocoding-contracts';
 
 export const ConfirmEntranceInputSchema = z.object({
   addressKey: DestinationAddressKeySchema,
@@ -30,6 +31,7 @@ export const EntranceResponseSchema = z.object({
   stale: z.boolean(),
   address: z.object({ street: z.string().nullable(), city: z.string().nullable(), country: z.string().nullable() }),
   referencePoint: GeoPointSchema.nullable(),
+  referenceGeocoding: GeocodingMetadataSchema.optional(),
   mapConfig: z.object({ key: z.string(), mapId: z.string().optional() }).nullable(),
 });
 
@@ -44,7 +46,8 @@ type EntranceRecord = z.infer<typeof EntranceRecordSchema>;
 const entranceColumns = 'latitude, longitude, version, confirmed_at AS "confirmedAt", confirmed_by_id AS "confirmedById", confirmed_by_name AS "confirmedByName"';
 const confirmAction = 'destination_entrance.confirmed';
 
-function entranceView(delivery: Delivery, addressKey: string, record: EntranceRecord | undefined, stale = false) {
+function entranceView(delivery: Delivery, addressKey: string, record: EntranceRecord | undefined, stale = false,
+  referencePoint?: z.infer<typeof GeoPointSchema>, referenceGeocoding?: z.infer<typeof GeocodingMetadataSchema>) {
   const { address, city, country } = delivery.source.customer;
   return {
     addressKey,
@@ -57,7 +60,8 @@ function entranceView(delivery: Delivery, addressKey: string, record: EntranceRe
     } : null,
     stale,
     address: { street: address, city, country },
-    referencePoint: delivery.routePoint ?? null,
+    referencePoint: referencePoint ?? delivery.routePoint ?? null,
+    ...(referenceGeocoding ? { referenceGeocoding } : {}),
   };
 }
 
@@ -75,7 +79,7 @@ export class DestinationEntrances {
         SELECT 1 FROM audit a
         WHERE a.delivery_id=$1 AND (
           (a.action=$2 AND (a.details->>'addressKey' <> $3 OR a.details->>'customerId' <> $4::text))
-          OR (a.action IN ('source.refreshed', 'source.review_required') AND EXISTS (
+          OR (a.action IN ('source.refreshed', 'source.review_required', 'source.candidate_accepted') AND EXISTS (
             SELECT 1 FROM destination_entrance prior
             WHERE prior.source_instance=$5
               AND prior.source_customer_id::text=(a.details #>> '{previousDestination,customerId}')
@@ -83,7 +87,8 @@ export class DestinationEntrances {
           ))
         )
       ) AS stale`, [id, confirmAction, identity.addressKey, identity.customerId, identity.sourceInstance]);
-    return entranceView(delivery, identity.addressKey, record, prior?.stale ?? false);
+    const geocoded = await this.points.geocodedFor([delivery], manager);
+    return entranceView(delivery, identity.addressKey, record, prior?.stale ?? false, geocoded.get(id)?.point, geocoded.get(id)?.geocoding);
   }
 
   async confirm(id: string, input: z.infer<typeof ConfirmEntranceInputSchema>, principal: OperatorActor) {
@@ -120,12 +125,17 @@ export class DestinationEntrances {
       await this.store.audit(manager, principal, confirmAction, {
         addressKey: identity.addressKey, customerId: identity.customerId, version: record.version,
       }, id);
-      return entranceView(delivery, identity.addressKey, record);
+      const geocoded = await this.points.geocodedFor([delivery], manager);
+      return entranceView(delivery, identity.addressKey, record, false, geocoded.get(id)?.point, geocoded.get(id)?.geocoding);
     });
   }
 
   async pointsFor(deliveries: readonly Delivery[], manager: EntityManager = this.store.db.source.manager) {
     return this.points.confirmedFor(deliveries, manager);
+  }
+
+  async effectivePointsFor(deliveries: readonly Delivery[], manager: EntityManager = this.store.db.source.manager) {
+    return this.points.effectiveFor(deliveries, manager);
   }
 
   private async identity(manager: EntityManager, delivery: Delivery) {

@@ -94,8 +94,8 @@ void test('History keeps partial and unperformed work distinct by order, operati
     await click(button(document, 'History'));
     const [oldCard, currentCard] = document.querySelectorAll('.result-card');
     assert.ok(oldCard && currentCard);
-    assert.match(oldCard.querySelector('.section-title')?.textContent ?? '', /Superseded/);
-    assert.match(currentCard.querySelector('.section-title')?.textContent ?? '', /Current/);
+    assert.match(oldCard.querySelector('[data-slot=card-header]')?.textContent ?? '', /Superseded/);
+    assert.match(currentCard.querySelector('[data-slot=card-header]')?.textContent ?? '', /Current/);
     assert.match(oldCard.textContent ?? '', /DEMO customer signature.*DEMO crew signature/s);
     const oldWork = oldCard.querySelector('section[aria-label="Work recorded on this visit"]');
     const currentWork = currentCard.querySelector('section[aria-label="Work recorded on this visit"]');

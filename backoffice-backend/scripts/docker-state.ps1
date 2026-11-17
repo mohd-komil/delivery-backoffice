@@ -2,28 +2,28 @@ function Docker-Checked([string[]]$Arguments) {
     & docker @Arguments
     if ($LASTEXITCODE -ne 0) { throw 'Docker operation failed; retained targets/backups must be inspected. Nothing is automatically reset.' }
 }
-function Query-Database([string]$Database, [string]$Sql, [switch]$Container) {
+function Query-Database([string]$Database, [string]$Sql, [switch]$Container, [string[]]$ComposeArguments = @()) {
     if ($Database -notin @('postgres','delivery_backoffice','delivery_backoffice_test','odoo_mock')) { throw 'Unexpected database target.' }
     if ($Container) {
-        $result = & docker compose exec -T db psql -X -A -t -q -v ON_ERROR_STOP=1 -U backoffice_local_admin -d $Database -c $Sql
+        $result = & docker compose @ComposeArguments exec -T db psql -X -A -t -q -v ON_ERROR_STOP=1 -U backoffice_local_admin -d $Database -c $Sql
     } else {
         $result = & $psql -X -A -t -q -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 55432 -U backoffice_local_admin -d $Database -c $Sql
     }
     if ($LASTEXITCODE -ne 0) { throw "Snapshot query failed in $Database." }
     return $result
 }
-function Database-Snapshot([string]$Database, [switch]$Container) {
+function Database-Snapshot([string]$Database, [switch]$Container, [string[]]$ComposeArguments = @()) {
     $tables = @()
     $namesSql = 'SELECT schemaname || ''.'' || tablename FROM pg_tables WHERE schemaname NOT IN (''pg_catalog'',''information_schema'') AND schemaname !~ ''^pg_'' ORDER BY schemaname COLLATE "C",tablename COLLATE "C"'
-    $names = @(Query-Database $Database $namesSql -Container:$Container)
+    $names = @(Query-Database $Database $namesSql -Container:$Container -ComposeArguments $ComposeArguments)
     foreach ($name in $names) {
         if ($name -notmatch '^([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)$') { throw 'Unexpected table identifier; migration requires inspection.' }
         $quoted = '"' + $Matches[1] + '"."' + $Matches[2] + '"'
         $sql = 'SET TIME ZONE ''UTC''; SELECT json_build_object(''count'',count(*),''digest'',md5(COALESCE(string_agg(row_to_json(t)::text,E''\n'' ORDER BY row_to_json(t)::text COLLATE "C"),'''')))::text FROM ' + $quoted + ' t'
-        $value = Query-Database $Database $sql -Container:$Container | ConvertFrom-Json
+        $value = Query-Database $Database $sql -Container:$Container -ComposeArguments $ComposeArguments | ConvertFrom-Json
         $tables += [ordered]@{ name=$name; count=[long]$value.count; digest=$value.digest }
     }
-    $sequenceJson = Query-Database $Database "SELECT COALESCE(json_agg(s ORDER BY schemaname,sequencename),'[]'::json)::text FROM (SELECT schemaname,sequencename,start_value,min_value,max_value,increment_by,cycle,cache_size,last_value FROM pg_sequences WHERE schemaname !~ '^pg_' AND schemaname <> 'information_schema') s" -Container:$Container
+    $sequenceJson = Query-Database $Database "SELECT COALESCE(json_agg(s ORDER BY schemaname,sequencename),'[]'::json)::text FROM (SELECT schemaname,sequencename,start_value,min_value,max_value,increment_by,cycle,cache_size,last_value FROM pg_sequences WHERE schemaname !~ '^pg_' AND schemaname <> 'information_schema') s" -Container:$Container -ComposeArguments $ComposeArguments
     # psql returns JSON aggregates over several lines when several schemas exist.
     # ConvertFrom-Json needs one document, not one pipeline input per output line.
     $sequences = ($sequenceJson -join "`n") | ConvertFrom-Json -NoEnumerate
@@ -68,7 +68,7 @@ process.stdout.write(JSON.stringify({ files }));
     return ($value | ConvertFrom-Json)
 }
 
-function Database-StructureSnapshot([string]$Database) {
+function Database-StructureSnapshot([string]$Database, [string[]]$ComposeArguments = @()) {
     $sql = @'
 SELECT json_build_object(
 'columns',(SELECT COALESCE(json_agg(t ORDER BY schema_name,table_name,position),'[]'::json) FROM (
@@ -100,5 +100,5 @@ SELECT json_build_object(
 ) t)
 )::text
 '@
-    return (((Query-Database $Database $sql -Container) -join "`n") | ConvertFrom-Json)
+    return (((Query-Database $Database $sql -Container -ComposeArguments $ComposeArguments) -join "`n") | ConvertFrom-Json)
 }

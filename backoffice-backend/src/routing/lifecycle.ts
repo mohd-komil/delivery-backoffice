@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { HttpException, Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 import { z } from 'zod';
 import type { CrewProfile } from '../crew/contracts';
@@ -7,19 +7,21 @@ import { CrewIdentity } from '../identity/crew-identity';
 import { rows } from '../database/database';
 import { AppointmentSchema, IdSchema, type Appointment, type Delivery, type OperatorActor } from '../domain/model';
 import { destinationAddressKey } from '../domain/destination-address';
-import { appointmentScopeReviewReason, assignedParticipant, customerConfirmationStatus, DomainError, effectiveResults, lineServiceStatuses, requireReviewedVisitScope } from '../domain/rules';
+import { appointmentScopeReviewReason, assignedParticipant, customerConfirmationStatus, DomainError, requireReviewedVisitScope } from '../domain/rules';
 import { Participants } from '../operations/participants';
 import { Skills } from '../operations/skills';
 import { DeliveryStore } from '../operations/store';
 import { activeTransport, Vehicles } from '../operations/vehicles';
 import { routeResourceStartBlocker, routeVisitStartBlocker } from '../operations/route-reservations';
+import { listDispatcherOwners, requireDispatcherOwners } from '../operations/dispatcher-owners';
 import { RouteDraftInputSchema, type RouteDraftInput } from './contracts';
 import { routeDepots } from './demo-estimates';
 import { DestinationEntrances } from './entrances';
 import { PublicationReviewSchema, PublicationSnapshotSchema, PublicationStatusSchema } from './publication-contracts';
 import { RouteActionInputSchema, RouteAmendInputSchema, RouteAmendReviewInputSchema, RouteAmendReviewSchema, RouteCancelInputSchema, RouteCloseInputSchema,
-  RouteLineStatusSchema, RouteOperationsSchema, RouteReasonInputSchema, RouteReconcileInputSchema, RouteReturnInputSchema, RouteRevisionSchema, RouteRuntimeSchema, RouteWarehouseReceiptInputSchema } from './lifecycle-contracts';
+  RouteOperationsSchema, RouteReasonInputSchema, RouteReconcileInputSchema, RouteReturnInputSchema, RouteRevisionSchema, RouteRuntimeSchema, RouteWarehouseReceiptInputSchema } from './lifecycle-contracts';
 import { normalizeRouteDraftInput, routeJob, RouteDrafts } from './service';
+import { cargoReceiptBalance, routeLineStatuses } from './line-status';
 
 const RecordSchema = z.object({ id: IdSchema, version: z.number().int().positive(), status: PublicationStatusSchema, data: PublicationSnapshotSchema, runtime: RouteRuntimeSchema });
 const ProvenanceSchema = z.object({ originalAppointment: AppointmentSchema.nullable(), serviceReservations: z.array(z.object({ resource: z.string() })),
@@ -45,8 +47,13 @@ function actionParticipant(state: State, actor: Caller) {
   const driver = state.row.data.draft.planning?.driver;
   return actor.role !== 'crew' || routeResponsible(state).id === actor.id || driver?.kind === 'participant' && driver.participantId === actor.id;
 }
+function actionParticipantRequirement(state: State) {
+  return state.row.data.draft.planning?.driver.kind === 'participant'
+    ? 'Only the route responsible participant or assigned driver can record this action'
+    : 'Only the route responsible participant can record this action';
+}
 function requireActionParticipant(state: State, actor: Caller) {
-  if (!actionParticipant(state, actor)) throw new DomainError('ROUTE_RESPONSIBLE_REQUIRED', 'Only the route responsible participant or its assigned driver can record this action', 403);
+  if (!actionParticipant(state, actor)) throw new DomainError('ROUTE_RESPONSIBLE_REQUIRED', actionParticipantRequirement(state), 403);
 }
 
 @Injectable()
@@ -76,7 +83,7 @@ export class RouteLifecycle {
     if (!person || state.row.status === 'cancelled' || !activePeople(state).some(({ id }) => id === actor.id)) throw new NotFoundException('Route not found');
   }
 
-  async owners() { return rows(this.store.db.source.manager, z.object({ id: IdSchema, name: z.string() }), 'SELECT id,name FROM app_user ORDER BY name,id'); }
+  async owners() { return listDispatcherOwners(this.store.db.source.manager); }
 
   async get(id: string, actor: Caller) {
     return this.store.db.source.transaction('REPEATABLE READ', async (manager) => {
@@ -155,12 +162,30 @@ export class RouteLifecycle {
 
   private async departureBlocker(manager: EntityManager, state: State, actor: Caller) {
     if (state.row.status !== 'published') return { code: 'ROUTE_NOT_PUBLISHED', message: 'Only a published route awaiting departure can depart' };
-    if (!actionParticipant(state, actor)) return { code: 'ROUTE_RESPONSIBLE_REQUIRED', message: 'Only the route responsible participant or assigned driver can record departure' };
+    if (!actionParticipant(state, actor)) return { code: 'ROUTE_RESPONSIBLE_REQUIRED', message: actionParticipantRequirement(state) };
     const next = nextStop(state);
     if (!next) return { code: 'ROUTE_NO_PENDING_STOP', message: 'The route has no pending stop' };
     if (next.appointment.status !== 'booked') return { code: 'ROUTE_HAS_STARTED_WORK', message: 'Review the already started stop before departure' };
     if (!next.appointment.customerConfirmation) return { code: 'CUSTOMER_CONFIRMATION_REQUIRED', message: 'The next customer must confirm before departure' };
     if (appointmentScopeReviewReason(next.delivery, next.appointment)) return { code: 'VISIT_WORK_REVIEW_REQUIRED', message: 'Review the next stop work before departure' };
+    const locationBlocker = await this.drafts.locationDepartureBlocker(manager, state.row.data.draft, state.row.data.review.locations);
+    if (locationBlocker) return locationBlocker;
+    const calendarBlocker = await this.drafts.calendarDepartureBlocker(manager, state.row.data.draft, state.row.data.review.timeline, state.row.data.review.calendar);
+    if (calendarBlocker) return calendarBlocker;
+    if (state.row.data.draft.planning?.availabilityMode === 'shared_calendar') {
+      try {
+        const current = await this.drafts.preparePublication({ ...this.currentPlan(state), departAt: new Date().toISOString() }, manager,
+          state.stops.map(({ delivery }) => delivery), state.row.id);
+        if (current.preview.feasibility.status !== 'feasible_estimate') return {
+          code: 'ROUTE_DEPARTURE_BLOCKED', message: 'The current departure-to-return schedule conflicts with availability or needs review.',
+        };
+      } catch (error: unknown) {
+        if (error instanceof DomainError || error instanceof HttpException) return {
+          code: 'ROUTE_DEPARTURE_BLOCKED', message: 'The current route needs review before departure.',
+        };
+        throw error;
+      }
+    }
     return this.inTransitConflict(manager, state);
   }
 
@@ -231,10 +256,9 @@ export class RouteLifecycle {
     }
     const plan = normalizeRouteDraftInput(command.plan);
     const planning = plan.planning;
-    if (!plan.crewId || !plan.vehicleId || !planning || !planning.participantIds.length || planning.driver.kind === 'unknown' || planning.transferBufferMinutes === null) {
-      throw new DomainError('ROUTE_RESOURCES_REQUIRED', 'Review crew, people, vehicle, driver and transfer buffer');
+    if (!plan.crewId || !plan.vehicleId || !planning || !planning.participantIds.length || planning.transferBufferMinutes === null) {
+      throw new DomainError('ROUTE_RESOURCES_REQUIRED', 'Review crew, people, vehicle and transfer buffer');
     }
-    if (planning.driver.kind === 'external' && !command.externalDriverPhone) throw new DomainError('DRIVER_PHONE_REQUIRED', 'Enter the external driver phone number', 400);
     if (plan.stops.length !== state.stops.length || plan.stops.some((stop) => !state.stops.some(({ appointmentId, deliveryId }) => appointmentId === stop.appointmentId && deliveryId === stop.deliveryId))) {
       throw new DomainError('ROUTE_EXACT_STOPS_REQUIRED', 'Amend the existing exact visits; additions and removals require a separate reviewed route');
     }
@@ -289,7 +313,8 @@ export class RouteLifecycle {
     const fingerprint = digest({ version: state.row.version, command, sourceVersions: state.stops.map(({ delivery }) => ({ id: delivery.id, version: delivery.version })),
       dependencies: prepared.preview.feasibility.fingerprint, points: prepared.preview.pointContexts, appointments: ordered.map(({ appointment }) => appointment) });
     const review = PublicationReviewSchema.parse({ routeId: state.row.id, draftVersion: state.row.data.review.draftVersion, fingerprint,
-      publicationEnabled: true, timeline: prepared.preview.timeline, feasibility: prepared.preview.feasibility,
+      publicationEnabled: true, timeline: prepared.preview.timeline, feasibility: prepared.preview.feasibility, locations: prepared.preview.locations,
+      calendar: prepared.preview.calendar,
       stops: ordered.map((stop) => ({ deliveryId: stop.deliveryId, pickingName: stop.delivery.source.pickingName, mode: stop.source === 'created' ? 'create' : 'attach', appointmentId: stop.appointmentId,
         startsAt: stop.appointment.startsAt, endsAt: stop.appointment.endsAt, workScope: stop.appointment.workScope, assignments: stop.appointment.assignments,
         responsibleParticipant: stop.appointment.responsibleParticipant, customerConfirmationStatus: customerConfirmationStatus(stop.appointment) })) });
@@ -311,9 +336,7 @@ export class RouteLifecycle {
       if (prepared.response.review.feasibility.status !== 'feasible_estimate') throw new DomainError('ROUTE_FEASIBILITY_INCOMPLETE', 'Resolve every conflict and unknown before applying the amendment');
       const { plan, ordered } = prepared;
       const planning = plan.planning; const returnAt = prepared.response.review.timeline.returnAt;
-      if (!planning || planning.driver.kind === 'unknown' || planning.transferBufferMinutes === null || !returnAt || !plan.vehicleId || !plan.crewId) throw new Error('Reviewed amendment lost required resources');
-      const driver = planning.driver.kind === 'participant' ? { kind: 'participant' as const, participantId: planning.driver.participantId }
-        : { kind: 'external' as const, name: planning.driver.name, phone: command.externalDriverPhone ?? '' };
+      if (!planning || planning.transferBufferMinutes === null || !returnAt || !plan.vehicleId || !plan.crewId) throw new Error('Reviewed amendment lost required resources');
       await manager.query('SET CONSTRAINTS route_stop_route_id_sequence_key DEFERRED');
       await manager.query('DELETE FROM route_reservation WHERE route_id=$1', [id]);
       const resources = new Set([`crew:${plan.crewId}`, `vehicle:${plan.vehicleId}`, ...planning.participantIds.map((personId) => `person:${personId}`)]);
@@ -324,7 +347,7 @@ export class RouteLifecycle {
         if (!original) throw new Error('Original stop missing during amendment');
         stop.appointment.transportAllocations = structuredClone(original.appointment.transportAllocations ?? []);
         for (const allocation of activeTransport(stop.appointment)) this.vehicles.retire(stop.appointment, allocation.id, 'replaced', command.reason, actor);
-        await this.vehicles.add(manager, stop.appointment, [{ vehicleId: plan.vehicleId, reserveFrom: plan.departAt, reserveTo: returnAt, driver }], actor);
+        await this.vehicles.add(manager, stop.appointment, [{ vehicleId: plan.vehicleId, reserveFrom: plan.departAt, reserveTo: returnAt, driver: { kind: 'none' } }], actor);
         stop.sequence = index + 1;
         await manager.query('UPDATE route_stop SET sequence=$2 WHERE id=$1', [stop.id, stop.sequence]);
         await manager.query('UPDATE appointment SET starts_at=$2,ends_at=$3 WHERE id=$1', [stop.appointmentId, stop.appointment.startsAt, stop.appointment.endsAt]);
@@ -332,8 +355,7 @@ export class RouteLifecycle {
       }
       state.stops = ordered;
       state.row.data.draft = plan; state.row.data.review = prepared.response.review;
-      if (planning.driver.kind === 'external') state.row.data.command.externalDriverPhone = command.externalDriverPhone;
-      else delete state.row.data.command.externalDriverPhone;
+      delete state.row.data.command.externalDriverPhone;
       state.row.data.appointments = ordered.map(({ deliveryId, appointment }) => ({ deliveryId, appointment: structuredClone(appointment) }));
     });
   }
@@ -402,8 +424,7 @@ export class RouteLifecycle {
       throw new DomainError('RECONCILIATION_EXACT_LINES_REQUIRED', 'Review every exact visit and source product line once');
     }
     const ownerIds = [...new Set(declarations.flatMap((line) => [line.ownerUserId, ...line.nextActions.map(({ ownerUserId }) => ownerUserId)]))];
-    const owners = await rows(manager, z.object({ id: IdSchema }), 'SELECT id FROM app_user WHERE id=ANY($1::uuid[])', [ownerIds]);
-    if (owners.length !== ownerIds.length) throw new DomainError('RECONCILIATION_OWNER_UNAVAILABLE', 'Choose an existing dispatcher for every line and next action');
+    await requireDispatcherOwners(manager, ownerIds, 'RECONCILIATION_OWNER_UNAVAILABLE');
     for (const declaration of declarations) {
       const line = lines.find((item) => key(item) === key(declaration));
       const stop = state.stops.find(({ appointmentId }) => appointmentId === declaration.appointmentId);
@@ -458,10 +479,7 @@ export class RouteLifecycle {
         seen.add(key);
         const line = lines.find((entry) => entry.appointmentId === item.appointmentId && entry.sourceLineId === item.sourceLineId);
         if (!line) throw new DomainError('WAREHOUSE_LINE_MISMATCH', 'The cargo does not belong to this route visit and source line');
-        const cargo = line.declaration?.cargo.find(({ kind }) => kind === item.kind);
-        const limit = item.kind === 'collection' ? line.collectedMilli - line.warehouseReceivedCollectionMilli
-          : cargo?.quantityMilli !== null && cargo?.quantityMilli !== undefined && ['vehicle', 'awaiting_receipt'].includes(cargo.location)
-            ? cargo.quantityMilli - line.warehouseReceivedUndeliveredMilli : 0;
+        const limit = cargoReceiptBalance(line, item.kind);
         if (item.quantityMilli > limit) throw new DomainError('WAREHOUSE_RECEIPT_EXCEEDS_CARGO', 'Receipt exceeds the remaining verified cargo quantity for this exact line');
       }
       state.row.runtime.warehouseReceipts.push({ id: randomUUID(), at: new Date().toISOString(), actor: actorSnapshot(actor), reason: command.reason, items: command.items });
@@ -485,35 +503,7 @@ export class RouteLifecycle {
   }
 
   private lines(state: State) {
-    return state.stops.flatMap((stop) => {
-      const statuses = new Map(lineServiceStatuses(stop.delivery).map((line) => [line.sourceLineId, line]));
-      const results = effectiveResults(stop.delivery).filter(({ appointmentId }) => appointmentId === stop.appointment.id);
-      return (stop.appointment.workScope?.lines ?? []).map((line) => {
-        const status = statuses.get(line.sourceLineId);
-        const quantities = results.flatMap(({ quantities }) => quantities).filter(({ sourceLineId }) => sourceLineId === line.sourceLineId);
-        const actual = (key: 'deliveredMilli' | 'installedMilli' | 'collectedMilli') => quantities.reduce((sum, quantity) => sum + (quantity[key] ?? 0), 0);
-        const receipt = (kind: 'collection' | 'undelivered') => state.row.runtime.warehouseReceipts.flatMap(({ items }) => items)
-          .filter((item) => item.appointmentId === stop.appointmentId && item.sourceLineId === line.sourceLineId && item.kind === kind).reduce((sum, item) => sum + item.quantityMilli, 0);
-        const orderId = line.sourceItem.saleOrderId ?? stop.delivery.source.saleOrderId;
-        const orderName = stop.delivery.source.salesOrders?.find(({ id }) => id === orderId)?.name
-          ?? (orderId === stop.delivery.source.saleOrderId ? stop.delivery.source.saleOrderName : `#${orderId}`);
-        return RouteLineStatusSchema.parse({ deliveryId: stop.deliveryId, appointmentId: stop.appointmentId, sourceLineId: line.sourceLineId,
-          orderName, productName: line.sourceItem.name, uom: line.sourceItem.uom,
-          plannedDeliveryMilli: line.deliveryMilli, plannedInstallationMilli: line.installationMilli, plannedCollectionMilli: line.collectionMilli,
-          deliveredMilli: actual('deliveredMilli'), installedMilli: actual('installedMilli'), collectedMilli: actual('collectedMilli'),
-          remainingDeliveryMilli: status?.remainingDeliveryMilli ?? Math.max(0, line.deliveryMilli - actual('deliveredMilli')),
-          remainingInstallationMilli: status?.remainingInstallationMilli ?? Math.max(0, line.installationMilli - actual('installedMilli')),
-          remainingCollectionMilli: status?.remainingCollectionMilli ?? Math.max(0, line.collectionMilli - actual('collectedMilli')),
-          remainingBasis: status ? 'current_delivery' : 'visit_snapshot_source_missing',
-          availableDeliveryMilli: status?.availableDeliveryMilli ?? 0, availableInstallationMilli: status?.availableInstallationMilli ?? 0, availableCollectionMilli: status?.availableCollectionMilli ?? 0,
-          planningBlockedReason: status?.planningBlockedReason ?? (status ? null : 'source_line_missing'), reportMissing: !terminal(stop.appointment),
-          incompleteWork: results.flatMap(({ incompleteWork }) => incompleteWork ?? []).filter(({ sourceLineId }) => sourceLineId === line.sourceLineId).map(({ operation, reason, note }) => ({ operation, reason, note: note ?? null })),
-          warehouseReceivedCollectionMilli: receipt('collection'), warehouseReceivedUndeliveredMilli: receipt('undelivered'),
-          declaration: state.row.runtime.reconciliation?.lines.find((entry) => entry.appointmentId === stop.appointmentId && entry.sourceLineId === line.sourceLineId) ?? null,
-          packagingStatus: 'unknown',
-        });
-      });
-    });
+    return routeLineStatuses(state.stops, state.row.runtime);
   }
 
   private closureBlockers(state: State) {
@@ -562,18 +552,21 @@ export class RouteLifecycle {
     const assignment = state.stops[0]?.appointment.assignments[0] ?? row.data.review.stops[0]?.assignments[0];
     if (!transport || !assignment) throw new Error('Published route resource snapshots are unavailable');
     const stops = [];
-    const entrancePoints = await this.entrances.pointsFor(state.stops.map(({ delivery }) => delivery), manager);
+    const effectivePoints = await this.entrances.effectivePointsFor(state.stops.map(({ delivery }) => delivery), manager);
     for (const stop of state.stops) {
       const timeline = row.data.review.timeline.stops.find(({ deliveryId }) => deliveryId === stop.deliveryId);
       const plan = row.data.draft.stops.find(({ deliveryId }) => deliveryId === stop.deliveryId);
       const addressKey = destinationAddressKey(stop.delivery.source.customer);
-      const point = entrancePoints.get(stop.deliveryId) ?? (plan?.pin?.addressKey === addressKey ? plan.pin : stop.delivery.routePoint);
+      const effective = effectivePoints.get(stop.deliveryId);
+      const pin = plan?.pin?.addressKey === addressKey ? plan.pin : undefined;
+      const point = effective?.pointSource === 'confirmed_entrance' ? effective.point : pin ?? effective?.point;
       const rule = appointmentScopeReviewReason(stop.delivery, stop.appointment);
       const routeBlocker = stop.appointment.status === 'booked' ? await routeVisitStartBlocker(manager, stop.appointmentId) : null;
       const canStart = stop.appointment.status === 'booked' && rule === null && !!stop.appointment.customerConfirmation && routeBlocker === null;
       stops.push({ deliveryId: stop.deliveryId, appointmentId: stop.appointmentId, sequence: stop.sequence, source: stop.source,
         pickingName: stop.delivery.source.pickingName, customerName: stop.delivery.source.customer.name, address: stop.delivery.source.customer.address,
         city: stop.delivery.source.customer.city, entrance: point ? { ...point, addressKey } : null, customerWindow: plan?.customerWindow ?? null,
+        ...(!pin && effective?.pointSource === 'geocoded' ? { geocoding: effective.geocoding } : {}),
         eta: timeline?.eta ?? null, workStartAt: timeline?.workStartAt ?? null, workEndAt: timeline?.workEndAt ?? null,
         status: stop.appointment.status, confirmationStatus: customerConfirmationStatus(stop.appointment), responsibleParticipant: stop.appointment.responsibleParticipant ?? null,
         workScope: stop.appointment.workScope ?? null, canStart, startBlocker: routeBlocker?.message ?? (rule ? 'Review the selected work' : !stop.appointment.customerConfirmation && stop.appointment.status === 'booked' ? 'Awaiting customer confirmation' : null),
@@ -588,8 +581,8 @@ export class RouteLifecycle {
     return RouteOperationsSchema.parse({ id: row.id, version: row.version, status: row.status, name: row.data.draft.name,
       draft: this.currentPlan(state), review: row.data.review, runtime: row.runtime, externalDriverPhone: row.data.command.externalDriverPhone ?? null,
       resources: { crew: { id: assignment.crewId, name: assignment.crewName }, vehicle: transport.vehicle, driver: transport.driver, participants: activePeople(state).map(({ id, name }) => ({ id, name })),
-        start: { id: row.data.draft.startPointId, name: routeDepots.find(({ id }) => id === row.data.draft.startPointId)?.name ?? row.data.draft.startPointId },
-        end: { id: row.data.draft.endPointId, name: routeDepots.find(({ id }) => id === row.data.draft.endPointId)?.name ?? row.data.draft.endPointId } },
+        start: { id: row.data.draft.startPointId, name: row.data.review.locations?.start.name ?? routeDepots.find(({ id }) => id === row.data.draft.startPointId)?.name ?? row.data.draft.startPointId },
+        end: { id: row.data.draft.endPointId, name: row.data.review.locations?.end.name ?? routeDepots.find(({ id }) => id === row.data.draft.endPointId)?.name ?? row.data.draft.endPointId } },
       routeResponsible: routeResponsible(state), nextAppointmentId: next?.appointmentId ?? null, stops, lines,
       capabilities: { canDepart: departBlocker === null, canReturn: canAct && returnBlocker === null,
         canMarkReturned: canAct && ['in_progress', 'returning'].includes(row.status), canAmend: actor.role !== 'crew' && row.status === 'published',
@@ -597,7 +590,7 @@ export class RouteLifecycle {
         canReconcile: actor.role !== 'crew' && (row.status === 'returned' || row.status === 'closed' && !!row.runtime.closureException),
         canClose: actor.role !== 'crew' && row.status === 'returned' && closureBlockers.length === 0,
         departBlocker: departBlocker?.message ?? null, departBlockerCode: departBlocker?.code ?? null,
-        returnBlocker: !canAct ? 'Only the route responsible participant or assigned driver can record this action' : returnBlocker,
+        returnBlocker: !canAct ? actionParticipantRequirement(state) : returnBlocker,
         returnBlockerCode: !canAct ? 'ROUTE_RESPONSIBLE_REQUIRED' : row.status !== 'in_progress' ? 'ROUTE_NOT_IN_PROGRESS' : returnBlocker ? 'ROUTE_UNFINISHED_STOPS' : null,
         closureBlockers, closureIssues: this.closureIssues(state) },
       history: history.length ? history.map(({ actorId, actorName, at, ...entry }) => ({ ...entry, actor: { id: actorId, name: actorName }, at: at.toISOString() }))

@@ -15,14 +15,19 @@ export function deliveryServiceLabel(t: DeliveryText, service: ServiceType): str
   return t(serviceNames[service]);
 }
 
-export function deliveryServicePlanLabel(t: DeliveryText, delivery: Delivery): string | undefined {
+export function deliveryServicePlanSummary(t: DeliveryText, delivery: Delivery) {
   const { servicePlan, source } = delivery;
   if (!servicePlan) return undefined;
+  const { defaultService } = servicePlan;
   const overrides = new Map(servicePlan.overrides.map((line) => [line.sourceLineId, line.service]));
-  const services = new Set(source.items.map((item) => overrides.get(item.sourceLineId) ?? servicePlan.defaultService));
-  if (services.size > 1) return t('mixedServices');
-  const service = services.values().next().value ?? servicePlan.defaultService;
-  return service ? deliveryServiceLabel(t, service) : t('notProvided');
+  const services = new Set(source.items.map((item) => overrides.get(item.sourceLineId) ?? defaultService));
+  if (services.size > 1) return { productServices: t('mixedServices'), differentDefault: defaultService };
+
+  const service = services.values().next().value ?? defaultService;
+  return {
+    productServices: service ? deliveryServiceLabel(t, service) : t('notProvided'),
+    differentDefault: service !== defaultService ? defaultService : null,
+  };
 }
 
 const statusKeys = [
@@ -78,6 +83,8 @@ const auditKeys = [
   ["instructions.updated", 'auditInstructionsUpdated'],
   ["destination_entrance.confirmed", 'auditEntranceConfirmed'],
   ["services.updated", 'auditServicesUpdated'],
+  ["work_times.updated", 'auditWorkTimesUpdated'],
+  ["work_times.standard_applied", 'auditTimeStandardApplied'],
   ["appointment.booked", 'auditAppointmentBooked'],
   ["transport.allocated", 'auditTransportAllocated'],
   ["transport.replaced", 'auditTransportReplaced'],
@@ -181,6 +188,8 @@ export function deliveryNoticeLabel(t: DeliveryText, message: string): string {
         return t('blockerMissingResult', { id });
       case 'requires the customer signature':
         return t('blockerCustomerSignature', { id });
+      case "requires review of the customer's refusal to sign":
+        return t('blockerSignatureRefusalReview', { id });
       case 'requires the responsible crew signature':
         return t('blockerCrewSignature', { id });
     }

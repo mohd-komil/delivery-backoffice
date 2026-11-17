@@ -1,5 +1,8 @@
 'use client';
 
+import { Combobox } from './ui/combobox';
+
+
 import { useEffect, useState } from 'react';
 import { useFormatter, useLocale, useTranslations } from 'next-intl';
 import { motion, MotionConfig } from 'motion/react';
@@ -9,6 +12,8 @@ import type { EntranceReviewData } from '@/lib/delivery-entrance';
 import { formatDateTime } from '@/lib/time';
 import { Field, Notice } from './ui';
 import { EntranceReviewAction } from './entrance-review-action';
+import { GeocodingAttribution } from './delivery-geocoding';
+import { WorkEstimateProvenance } from './delivery-work-time';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
@@ -34,6 +39,7 @@ export function RouteStops({ stops, jobs, onMove, onRemove, onDuration, onAppoin
   const locale = useLocale();
   const entranceText = useTranslations('entranceReview');
   const checkText = useTranslations('routeChecks');
+  const workText = useTranslations('workPlan');
   return <Card className="grid gap-4 p-4 sm:p-5">
     <h2 className="text-base font-semibold">{t('stops')}</h2>
     {stops.length === 0 ? <p className="text-sm text-muted-foreground">{t('emptyStops')}</p> : <MotionConfig reducedMotion="user"><ol className="grid gap-3">
@@ -50,17 +56,17 @@ export function RouteStops({ stops, jobs, onMove, onRemove, onDuration, onAppoin
             <div className="min-w-0 flex-1">{job ? <JobSummary job={job} /> : <p className="text-sm font-medium">{t('unknownStop')}</p>}</div>
           </div>
           {job ? <>
-            <Field label={t('workSelection')}><select value={appointmentId ?? ''} onChange={(event) => onAppointment(deliveryId, event.target.value)}>
+            <Field label={t('workSelection')}><Combobox value={appointmentId ?? ''} onChange={(event) => onAppointment(deliveryId, event.target.value)}>
               <option value="" disabled={job.hasAvailableRemaining === false}>{t('availableWork')}</option>
               {appointmentId && !appointments.some(({ id }) => id === appointmentId) ? <option value={appointmentId} disabled>{t('unavailableAppointment')}</option> : null}
               {appointments.map((appointment) => <option key={appointment.id} value={appointment.id} disabled={appointment.needsReview}>
                 {t('appointmentWorkOption', { start: formatDateTime(appointment.startsAt, locale), end: formatDateTime(appointment.endsAt, locale) })}
                 {appointment.needsReview ? ` · ${t('scopeNeedsReview')}` : ''}
               </option>)}
-            </select></Field>
+            </Combobox></Field>
             <p className="text-xs text-muted-foreground">{t('workSelectionHelp')}</p>
             {!workMatches ? <p role="status" className="text-xs text-muted-foreground">{t('updatingWork')}</p> : <JobRemaining job={job} />}
-            {job.workReviewReason ? <Notice>{t(job.workReviewReason === 'stock_pending' ? 'stockPendingHelp' : 'reviewWorkHelp')}</Notice> : null}
+            {job.workReviewReason ? <Notice>{job.workReviewReason === 'prior_work_review' ? workText('prior_work_review') : t(job.workReviewReason === 'stock_pending' ? 'stockPendingHelp' : 'reviewWorkHelp')}</Notice> : null}
             {!appointmentId && job.hasAvailableRemaining === false ? <Notice>{t('chooseAppointmentWork')}</Notice> : null}
           </> : null}
           {job?.suggestedWorkMinutes === null ? <p className="rounded-md border border-warning-foreground/25 bg-warning px-3 py-2 text-xs text-warning-foreground"><strong>{t('reviewDuration')}</strong> {t('reviewDurationHelp')}</p> : null}
@@ -68,6 +74,7 @@ export function RouteStops({ stops, jobs, onMove, onRemove, onDuration, onAppoin
             <EntranceReviewAction deliveryId={deliveryId} onSaved={(value) => onEntranceSaved(deliveryId, value)} />
             {job.entranceConfirmed ? <span className="badge success">{entranceText('saved')}</span> : null}
           </div> : null}
+          {job?.geocoding ? <div className="space-y-1"><GeocodingAttribution /><p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{job.geocoding.attribution}</p></div> : null}
           {job?.addressKey && !job.entranceConfirmed ? <details className="text-xs">
             <summary className="cursor-pointer text-muted-foreground">{t('stopCoordinates')}</summary>
             <div className="mt-2 grid gap-2">
@@ -88,7 +95,7 @@ export function RouteStops({ stops, jobs, onMove, onRemove, onDuration, onAppoin
               <Button type="button" size="sm" variant="ghost" onClick={() => onRemove(deliveryId)}>{t('remove')}</Button>
             </div>
           </div>
-          <Field label={checkText('durationSource')}><select value={workDurationSource ?? (workMinutes ? 'manual' : 'unknown')} onChange={(event) => { const source = event.target.value; if (source === 'manual' || source === 'remaining_estimate' || source === 'unknown') onDurationSource(deliveryId, source); }}>{(['remaining_estimate', 'manual', 'unknown'] as const).map((source) => <option key={source} value={source}>{checkText(source)}</option>)}</select></Field>
+          <Field label={checkText('durationSource')}><Combobox value={workDurationSource ?? (workMinutes ? 'manual' : 'unknown')} onChange={(event) => { const source = event.target.value; if (source === 'manual' || source === 'remaining_estimate' || source === 'unknown') onDurationSource(deliveryId, source); }}>{(['remaining_estimate', 'manual', 'unknown'] as const).map((source) => <option key={source} value={source}>{checkText(source)}</option>)}</Combobox></Field>
           {job?.workFingerprint && workFingerprint !== job.workFingerprint ? <div className="grid gap-2"><p className="text-xs text-warning-foreground">{checkText('workChanged')}</p><Button type="button" variant="outline" size="sm" disabled={!workMatches} onClick={() => onReview(deliveryId)}>{checkText('review')}</Button></div> : null}
           <RouteWindowFields value={customerWindow} initialWindow={appointments.find(({ id }) => id === appointmentId)} onChange={(value) => onWindow(deliveryId, value)} />
         </motion.li>;
@@ -108,6 +115,7 @@ export function JobSummary({ job }: { job: RouteJob }) {
     <p className="mt-1 break-words text-xs text-muted-foreground">{[job.address, job.city].filter(Boolean).join(', ') || t('missingAddress')}</p>
     <p className="mt-1 break-words font-mono text-xs text-muted-foreground">{[job.pickingName, ...job.orderNames].join(' · ')}</p>
     {job.distanceKm !== null ? <p className="mt-1 text-xs text-muted-foreground">{t('distance', { km: f.number(job.distanceKm, { maximumFractionDigits: 1 }) })}</p> : null}
+    {job.remainingWorkEstimate ? <WorkEstimateProvenance basis={job.remainingWorkEstimate.basis} /> : null}
   </>;
 }
 
@@ -179,10 +187,10 @@ export function NearbyWork({ jobs, revision, selectedIds, onAdd }: { jobs: Route
     <div><h2 className="text-base font-semibold">{t('nearby')}</h2><p className="mt-1 text-xs text-muted-foreground">{t('nearbyHelp')}</p></div>
     <Field label={t('search')}><Input type="search" value={search} maxLength={100} onChange={(event) => { setSearch(event.target.value); setLimit(6); }} onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault(); }} /></Field>
     <div className="grid grid-cols-[minmax(0,1fr)_6rem] gap-3">
-      <Field label={t('anchor')}><select value={anchorId} onChange={(event) => { setSelectedAnchor(anchorJobs.get(event.target.value) ?? null); setLimit(6); }}>
+      <Field label={t('anchor')}><Combobox value={anchorId} onChange={(event) => { setSelectedAnchor(anchorJobs.get(event.target.value) ?? null); setLimit(6); }}>
         <option value="">{t('anyLocation')}</option>
         {[...anchorJobs.values()].map((job) => <option key={job.deliveryId} value={job.deliveryId}>{job.customerName} · {job.pickingName}</option>)}
-      </select></Field>
+      </Combobox></Field>
       <Field label={t('radius')}><Input inputMode="decimal" value={radius} aria-invalid={!validRadius || undefined} disabled={!anchorId} onChange={(event) => { setRadius(event.target.value); setLimit(6); }} /></Field>
     </div>
     {anchor ? <div className="grid gap-2 rounded-md border border-border bg-muted/45 p-3">

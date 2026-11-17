@@ -143,9 +143,9 @@ void test('participant skills use real HTTP guards, isolated PostgreSQL and immu
         'SELECT (SELECT count(*)::int FROM reservation r JOIN appointment a ON a.id=r.appointment_id WHERE a.delivery_id=$1) AS reservations,(SELECT count(*)::int FROM command_receipt WHERE delivery_id=$1) AS receipts,(SELECT count(*)::int FROM audit WHERE delivery_id=$1) AS audits', [id]))[0];
     }
 
-    await context.test('catalog enforces authentication/admin/origin/strict inputs and case-insensitive full-length names', async () => {
+    await context.test('catalog permits both Backoffice roles while enforcing authentication/origin/strict inputs and case-insensitive full-length names', async () => {
       await failure('/skills', 401); await failure('/skills', 401, 'POST', { name: 'Anonymous' });
-      await failure('/skills', 403, 'POST', { name: 'Forbidden' }, operatorCookie);
+      const operatorSkill=SkillSchema.parse(await success('/skills','POST',{name:'Operator created'},operatorCookie));
       await failure('/skills', 403, 'POST', { name: 'Bad origin' }, adminCookie, 'https://untrusted.example');
       await failure('/skills', 400, 'POST', { name: '' }, adminCookie);
       await failure('/skills', 400, 'POST', { name: 'A'.repeat(201) }, adminCookie);
@@ -156,7 +156,8 @@ void test('participant skills use real HTTP guards, isolated PostgreSQL and immu
       await failure('/skills', 409, 'POST', { name: 'cABINET ASSEMBLY' }, adminCookie);
       const longName = 'L'.repeat(199) + 'X'; await skill(longName); await skill('L'.repeat(199) + 'Y');
       await failure('/skills', 409, 'POST', { name: longName.toLowerCase() }, adminCookie);
-      await failure('/skills/' + value.id, 403, 'PATCH', { version: 1, name: value.name, enabled: false }, operatorCookie);
+      const operatorChanged=SkillSchema.parse(await success('/skills/'+operatorSkill.id,'PATCH',{version:operatorSkill.version,name:'Operator updated',enabled:false},operatorCookie));
+      assert.equal(operatorChanged.enabled,false); assert.equal(operatorChanged.version,2);
       await failure('/skills/' + randomUUID(), 404, 'PATCH', { version: 1, name: 'Missing', enabled: true }, adminCookie);
       await failure('/skills/not-a-uuid', 400, 'PATCH', { version: 1, name: 'Invalid', enabled: true }, adminCookie);
       const oldVersion = value.version; value = await editSkill(value, { name: 'Cabinet fitting' });
@@ -176,14 +177,14 @@ void test('participant skills use real HTTP guards, isolated PostgreSQL and immu
       const hash = (await rows(database.source.manager, z.object({ password_hash: z.string() }), 'SELECT password_hash FROM person WHERE id=$1', [value.id]))[0]?.password_hash; assert.ok(hash);
       const originalProfile = ProfileFields.parse(value);
       await failure(`/participants/${value.id}/skills`, 401, 'PATCH', { version: value.version, skillIds: [a.id] });
-      await failure(`/participants/${value.id}/skills`, 403, 'PATCH', { version: value.version, skillIds: [a.id] }, operatorCookie);
+      await failure(`/participants/${value.id}/skills`, 403, 'PATCH', { version: value.version, skillIds: [a.id] }, operatorCookie,'https://untrusted.example');
       await failure(`/participants/${value.id}/skills`, 403, 'PATCH', { version: value.version, skillIds: [a.id] }, adminCookie, 'https://untrusted.example');
       for (const skillIds of [[a.id, a.id], [a.id, a.id.toUpperCase()]]) await failure(`/participants/${value.id}/skills`, 400, 'PATCH', { version: value.version, skillIds }, adminCookie);
       await failure(`/participants/${value.id}/skills`, 404, 'PATCH', { version: value.version, skillIds: [randomUUID()] }, adminCookie);
       await failure(`/participants/${randomUUID()}/skills`, 404, 'PATCH', { version: 1, skillIds: [a.id] }, adminCookie);
       await failure(`/participants/${value.id}/skills`, 400, 'PATCH', { version: value.version, skillIds: [a.id], name: 'Injected profile' }, adminCookie);
       await failure(`/participants/${value.id}/skills`, 409, 'PATCH', { version: value.version, skillIds: [disabled.id] }, adminCookie);
-      const oldVersion = value.version; value = await personSkills(value, [a.id, b.id]);
+      const oldVersion = value.version; value = ParticipantSchema.parse(await success(`/participants/${value.id}/skills`,'PATCH',{version:value.version,skillIds:[a.id,b.id]},operatorCookie));
       assert.deepEqual([...value.skillIds].sort(), [a.id, b.id].sort()); assert.deepEqual(ProfileFields.parse(value), originalProfile);
       await failure(`/participants/${value.id}/skills`, 409, 'PATCH', { version: oldVersion, skillIds: [] }, adminCookie);
       assert.equal((await rows(database.source.manager, z.object({ password_hash: z.string() }), 'SELECT password_hash FROM person WHERE id=$1', [value.id]))[0]?.password_hash, hash);
@@ -204,10 +205,10 @@ void test('participant skills use real HTTP guards, isolated PostgreSQL and immu
     await context.test('task template requirements preserve omission, allow explicit clearing and keep legacy JSON absent on reads', async () => {
       const a = await skill('Template assembly'); const b = await skill('Template wiring');
       let value = await template('DEMO combined qualification', [a.id, b.id]);
-      await failure('/templates', 403, 'POST', { title: 'Forbidden' }, operatorCookie);
+      await failure('/templates', 400, 'POST', { title: 'Incomplete operator input' }, operatorCookie);
       await failure('/templates', 400, 'POST', { title: 'Duplicate requirements', severity: 'low', order: 1, checklist: ['Check'], enabled: true, requiredSkillIds: [a.id, a.id] }, adminCookie);
       await failure('/templates', 404, 'POST', { title: 'Missing requirement', severity: 'low', order: 1, checklist: ['Check'], enabled: true, requiredSkillIds: [randomUUID()] }, adminCookie);
-      value = TaskTemplateSchema.parse(await success('/templates/' + value.id, 'PATCH', templateBody(value, { title: 'DEMO renamed task' }), adminCookie));
+      value = TaskTemplateSchema.parse(await success('/templates/' + value.id, 'PATCH', templateBody(value, { title: 'DEMO renamed task' }), operatorCookie));
       assert.deepEqual([...(value.requiredSkillIds ?? [])].sort(), [a.id, b.id].sort());
       value = TaskTemplateSchema.parse(await success('/templates/' + value.id, 'PATCH', templateBody(value, { id: value.id.toUpperCase(), title: 'DEMO matching readonly identifier' }), adminCookie));
       const beforeRejected = structuredClone(value);

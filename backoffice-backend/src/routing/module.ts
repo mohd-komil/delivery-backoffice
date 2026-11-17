@@ -14,6 +14,11 @@ import { DeliveryMap } from './delivery-map';
 import { RoutePublication } from './publication';
 import { RouteLifecycle } from './lifecycle';
 import { CrewRoutesController, RouteLifecycleController } from './lifecycle-controller';
+import { GeoapifyClient } from './geoapify-client';
+import { AddressGeocoding } from './geocoding';
+import { GeocodingController } from './geocoding-controller';
+import { PlanningLocationsModule } from '../planning/locations-module';
+import { PlanningCalendarModule } from '../planning/calendar-module';
 
 @Controller('routes')
 class RouteController {
@@ -84,9 +89,9 @@ class RouteController {
 }
 
 @Module({
-  imports: [OperationsModule],
-  controllers: [RouteLifecycleController, CrewRoutesController, RouteController, EntranceController, AddressSuggestionController],
-  providers: [RouteDrafts, RoutePublication, RouteLifecycle, GoogleRoads, DestinationEntrances, GoogleGeocoder, DeliveryMap],
-  exports: [DeliveryMap],
+  imports: [OperationsModule, PlanningLocationsModule, PlanningCalendarModule],
+  controllers: [RouteLifecycleController, CrewRoutesController, RouteController, EntranceController, AddressSuggestionController, GeocodingController],
+  providers: [RouteDrafts, RoutePublication, RouteLifecycle, GoogleRoads, DestinationEntrances, GoogleGeocoder, DeliveryMap, GeoapifyClient, AddressGeocoding],
+  exports: [DeliveryMap, AddressGeocoding],
 })
 export class RoutingModule {}

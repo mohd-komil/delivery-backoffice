@@ -22,5 +22,6 @@ export default defineConfig([
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
-  globalIgnores(['.next/**', 'out/**', 'node_modules/**', 'next-env.d.ts']),
+  // .local contains disposable stand copies/builds; their authoritative src, test and config stay checked here.
+  globalIgnores(['.next/**', '.local/**', 'out/**', 'node_modules/**', 'next-env.d.ts']),
 ]);

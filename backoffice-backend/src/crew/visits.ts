@@ -2,7 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { z } from 'zod';
 import { Database, rows } from '../database/database';
 import { AppointmentSchema, DeliverySchema, DocumentSnapshotSchema, IdSchema, InstructionsSchema, SourceSchema } from '../domain/model';
-import { appointmentScopeReviewReason, crewAssignments, customerConfirmationStatus, effectiveResults, lineServiceStatuses, unfinishedChecklistCount } from '../domain/rules';
+import { appointmentScopeReviewReason, crewAssignments, customerConfirmationStatus, effectiveResults, lineServiceStatuses, signatureRefusalStatus, unfinishedChecklistCount } from '../domain/rules';
 import { Files } from '../evidence/files';
 import { recordedActualStart } from '../execution/visit';
 import { CREW_VISIT_LIST_LIMIT, type CrewProfile, type CrewVisitDetail, type CrewVisitSummary } from './contracts';
@@ -14,7 +14,9 @@ const VisitRow = z.object({
   appointment: AppointmentSchema,
   source: SourceSchema,
   servicePlan: DeliverySchema.shape.servicePlan.nullish().transform((plan) => plan ?? undefined),
+  priorWorkRevisions: DeliverySchema.shape.priorWorkRevisions.nullish().transform((revisions) => revisions ?? undefined),
   sourceReview:z.boolean(),
+  sourceImport: DeliverySchema.shape.sourceImport.nullish().transform((state) => state ?? undefined),
   instructions: InstructionsSchema,
   issues:DeliverySchema.shape.issues,
   workHolds:DeliverySchema.shape.workHolds.nullish().transform((holds)=>holds??undefined),
@@ -54,6 +56,7 @@ function crewVisitDetail(row: Omit<VisitRow, 'deliveryId'>, participantId: strin
   const showOrder = row.servicePlan !== undefined || orders.size > 1;
   const scopeReviewReason=appointmentScopeReviewReason(row,row.appointment,{allowDamageHold:row.appointment.status==='in_progress'});
   const scope=result?.workScopeSnapshot??row.appointment.workScope;
+  const refusalStatus = signatureRefusalStatus(row.appointment);
   return {
     ...visit.summary,
     version: row.version,
@@ -61,6 +64,7 @@ function crewVisitDetail(row: Omit<VisitRow, 'deliveryId'>, participantId: strin
     canFinish: row.appointment.status === 'in_progress' && scopeReviewReason===null && responsibleParticipant?.id.toLowerCase() === participantId.toLowerCase(),
     canStart:row.appointment.status==='booked'&&scopeReviewReason===null&&row.appointment.customerConfirmation!==undefined,
     scopeReviewReason,
+    ...(refusalStatus === undefined ? {} : { signatureRefusalStatus: refusalStatus }),
     workScope:scope?{revision:scope.revision,confirmedAt:scope.confirmedAt,lines:scope.lines.map((line)=>({
       sourceLineId:line.sourceLineId,service:line.service,deliveryMilli:line.deliveryMilli,
       installationMilli:line.installationMilli,collectionMilli:line.collectionMilli,
@@ -102,7 +106,7 @@ export class CrewVisits {
   private fetch(participantId: string, appointmentId: string | null, includeQuantities = false) {
     return rows(this.db.source.manager, VisitRow, `
       SELECT d.id AS "deliveryId", d.version, v.data AS appointment, d.data->'source' AS source, d.data->'instructions' AS instructions,
-        d.data->'servicePlan' AS "servicePlan", d.data->'issues' AS issues,d.data->'workHolds' AS "workHolds",
+        d.data->'servicePlan' AS "servicePlan", d.data->'priorWorkRevisions' AS "priorWorkRevisions", d.data->'sourceImport' AS "sourceImport", d.data->'issues' AS issues,d.data->'workHolds' AS "workHolds",
         (d.data->>'sourceReview')::boolean AS "sourceReview",
         CASE WHEN $4 THEN d.data->'appointments' ELSE '[]'::jsonb END AS appointments
       FROM appointment a JOIN delivery d ON d.id = a.delivery_id

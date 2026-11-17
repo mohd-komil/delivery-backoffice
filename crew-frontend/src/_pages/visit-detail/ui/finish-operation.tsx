@@ -1,5 +1,8 @@
 'use client';
 
+import { Combobox } from '@/shared/ui/combobox';
+
+
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 import type { VisitDetail } from '@/shared/api/contracts';
@@ -51,13 +54,13 @@ export function FinishOperation({ item, field, headingId, hintId, error, clearEr
       <p className="text-sm font-medium">{t(actual === 0 ? 'workNotPerformed' : 'workPartiallyPerformed', { amount: amount(planned - actual), uom: item.uom })}</p>
       <label className="field" htmlFor={`${id}-reason`}>
         <span id={`${id}-reason-label`}>{t('incompleteReason')}</span>
-        <select id={`${id}-reason`} name={incompleteWorkFieldName(item.sourceLineId, operation, 'reason')} value={reason}
+        <Combobox id={`${id}-reason`} name={incompleteWorkFieldName(item.sourceLineId, operation, 'reason')} value={reason}
           aria-required="true" aria-labelledby={`${headingId} ${id}-label ${id}-reason-label`}
           aria-invalid={workError?.reason === 'reasonRequired' || undefined} aria-describedby={workError ? `${id}-incomplete-error` : undefined}
           onChange={(event) => { setReason(event.currentTarget.value); if (workError) clearError(); }}>
           <option value="">{t('incompleteChooseReason')}</option>
           {incompleteWorkReasons.map((value) => <option key={value} value={value}>{t(incompleteReasonMessages[value])}</option>)}
-        </select>
+        </Combobox>
       </label>
       <label className="field" htmlFor={`${id}-note`}>
         <span id={`${id}-note-label`}>{t(noteRequired ? 'incompleteNoteRequired' : 'incompleteNoteOptional')}</span>

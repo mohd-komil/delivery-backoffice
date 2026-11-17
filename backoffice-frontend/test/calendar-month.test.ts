@@ -120,11 +120,13 @@ for (const kind of ['main', 'participant'] as const) {
       if (kind === 'participant') { assert.ok(cancelled instanceof page.dom.window.HTMLInputElement); await act(async () => { cancelled.click(); }); assert.match(cell(page, '2026-11-05').textContent ?? '', /CANCELLED-MONTH/); }
       const table = document.querySelector('.calendar-month'); const dayCell = cell(page, '2026-11-03'); const event = dayCell.querySelector('.calendar-month-event'); const scroll = document.querySelector('.calendar-month-scroll'); const monthPicker = picker(page, kind);
       assert.ok(table); assert.ok(event); assert.ok(scroll instanceof page.dom.window.HTMLElement);
-      scroll.scrollLeft = 337; scroll.scrollTop = 113; monthPicker.focus();
+      const monthTrigger = monthPicker.parentElement?.querySelector('button[role="combobox"]');
+      assert.ok(monthTrigger instanceof page.dom.window.HTMLButtonElement);
+      scroll.scrollLeft = 337; scroll.scrollTop = 113; monthTrigger.focus();
       function unchanged(scroll: HTMLElement) {
         assert.equal(document.querySelector('.calendar-month'), table); assert.equal(cell(page, '2026-11-03'), dayCell); assert.equal(dayCell.querySelector('.calendar-month-event'), event);
         assert.equal(document.querySelector('.calendar-month-scroll'), scroll); assert.equal(scroll.scrollLeft, 337); assert.equal(scroll.scrollTop, 113);
-        assert.equal(picker(page, kind), monthPicker); assert.equal(monthPicker.value, '2026-11'); assert.equal(document.activeElement, monthPicker); assert.equal(button(document, 'Month').getAttribute('aria-pressed'), 'true');
+        assert.equal(picker(page, kind), monthPicker); assert.equal(monthPicker.value, '2026-11'); assert.ok(document.activeElement === monthTrigger, 'The visible month picker retains focus'); assert.equal(button(document, 'Month').getAttribute('aria-pressed'), 'true');
         if (kind === 'participant') { assert.ok(cancelled instanceof page.dom.window.HTMLInputElement); assert.equal(cancelled.checked, true); }
       }
       const pending = api.defer(settings(kind).path); await click(button(document, settings(kind).refresh)); unchanged(scroll);

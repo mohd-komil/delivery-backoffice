@@ -125,7 +125,7 @@ void test('participant creation sends full profile and synthetic credentials; le
   } finally { await page.close(); }
 });
 
-void test('operator participant table shows missing profile data without credential UI or mutation actions', { concurrency: false }, async () => {
+void test('operator participant table shows missing profile data and exposes authorized profile actions', { concurrency: false }, async () => {
   const api = new ApiFixture(); api.participants = [{ ...person(personA, 'DEMO legacy display'), firstName: null, lastName: null, login: 'demo-private-login', hasPassword: true }];
   const page = await domHarness(api);
   try {
@@ -134,7 +134,10 @@ void test('operator participant table shows missing profile data without credent
     await waitFor(() => api.calls.some((call) => call.pathname === '/participants'), 'participant catalogue'); await settle();
     const tab = Array.from(document.querySelectorAll('.tabbar button')).find((node) => node.textContent?.startsWith('Participants')); assert.ok(tab instanceof page.dom.window.HTMLButtonElement); await click(tab);
     const table = document.querySelector('.participants-table'); assert.ok(table); assert.match(table.textContent ?? '', /First: Not provided · Last: Not provided/);
-    assert.doesNotMatch(document.body.textContent ?? '', /demo-private-login|Password configured|Future credentials|Edit participant|New participant/);
+    assert.match(document.body.textContent ?? '', /demo-private-login/);
+    assert.match(document.body.textContent ?? '', /Password configured/);
+    assert.equal(button(document, '+ New participant').disabled, false);
+    assert.equal(button(document, 'Edit participant').disabled, false);
   } finally { await page.close(); }
 });
 

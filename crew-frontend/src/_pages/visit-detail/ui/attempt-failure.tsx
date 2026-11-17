@@ -37,26 +37,19 @@ export function AttemptFailureForm({ visit, actions }: { visit: VisitDetail; act
     void actions.run('attemptFailure', () => recordFailedAttempt(visit.id, { reason, version, requestId }));
   }
 
-  return <details className="panel detail-section attempt-failure">
-    <summary>
-      <span className="section-icon"><Icon name="alert" size={17} /></span>
-      <span>{t('attemptFailureTitle')}</span>
-      <span className="attempt-chevron"><Icon name="chevron" size={17} /></span>
-    </summary>
-    <form className="attempt-failure-form" onSubmit={submit} aria-busy={actions.busy === 'attemptFailure'}>
-      <p id={`${id}-hint`} className="text-muted">{t('attemptFailureHint')}</p>
-      <label className="field" htmlFor={`${id}-reason`}>
-        <span>{t('attemptFailureReason')}</span>
-        <textarea id={`${id}-reason`} name="reason" required maxLength={2000} rows={3} disabled={actions.busy !== null}
-          aria-invalid={missingReason || undefined} aria-describedby={missingReason ? `${id}-hint ${id}-error` : `${id}-hint`}
-          onChange={() => setMissingReason(false)} />
-      </label>
-      {missingReason ? <p id={`${id}-error`} className="field-error" role="alert">{t('attemptFailureReasonRequired')}</p> : null}
-      <Button type="submit" variant="secondary" className="justify-self-start" disabled={actions.busy !== null} aria-describedby={`${id}-hint`}>
-        {actions.busy === 'attemptFailure' ? t('attemptFailureSending') : t('attemptFailureSubmit')}
-      </Button>
-    </form>
-  </details>;
+  return <form className="grid gap-3" onSubmit={submit} aria-busy={actions.busy === 'attemptFailure'}>
+    <p id={`${id}-hint`} className="text-muted">{t('attemptFailureHint')}</p>
+    <label className="field" htmlFor={`${id}-reason`}>
+      <span>{t('attemptFailureReason')}</span>
+      <textarea id={`${id}-reason`} name="reason" required maxLength={2000} rows={3} disabled={actions.busy !== null}
+        aria-invalid={missingReason || undefined} aria-describedby={missingReason ? `${id}-hint ${id}-error` : `${id}-hint`}
+        onChange={() => setMissingReason(false)} />
+    </label>
+    {missingReason ? <p id={`${id}-error`} className="field-error" role="alert">{t('attemptFailureReasonRequired')}</p> : null}
+    <Button type="submit" variant="secondary" className="justify-self-start" disabled={actions.busy !== null} aria-describedby={`${id}-hint`}>
+      {actions.busy === 'attemptFailure' ? t('attemptFailureSending') : t('attemptFailureSubmit')}
+    </Button>
+  </form>;
 }
 
 export function AttemptFailureResult({ failure }: { failure: VisitDetail['failedAttempt'] }) {

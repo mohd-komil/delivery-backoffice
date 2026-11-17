@@ -2,6 +2,7 @@
 
 import { useLocale, useTranslations } from 'next-intl';
 import { calendarDay } from '@/lib/time';
+import { DatePicker } from './ui/date-picker';
 import { calendarPeriodLabel, selectCalendarMonth, shiftCalendarAnchor, type CalendarMode } from '@/lib/calendar-period';
 
 export function CalendarControls({ anchor, mode, onAnchorChange, onModeChange, onRefresh, refreshing, idPrefix, refreshLabel }: { anchor: string; mode: CalendarMode; onAnchorChange: (value: string) => void; onModeChange: (value: CalendarMode) => void; onRefresh: () => void; refreshing: boolean; idPrefix: string; refreshLabel: string }) {
@@ -23,8 +24,8 @@ export function CalendarControls({ anchor, mode, onAnchorChange, onModeChange, o
       <button className="button secondary small" onClick={() => onAnchorChange(calendarDay(new Date().toISOString()))}>{t('today')}</button>
       <button className="button secondary small" onClick={() => onAnchorChange(shiftCalendarAnchor(anchor, mode, 1))}>{t(month ? 'nextMonth' : 'next')}</button>
       <label className="sr-only" htmlFor={pickerId}>{pickerLabel}</label>
-      <input id={pickerId} type={month ? 'month' : 'date'} value={month ? anchor.slice(0, 7) : anchor} onChange={(event) => {
-        const value = event.target.value;
+      <DatePicker id={pickerId} label={pickerLabel} type={month ? 'month' : 'date'} value={month ? anchor.slice(0, 7) : anchor} onValueChange={(value) => {
+
         if (value) onAnchorChange(month ? selectCalendarMonth(anchor, value) : value);
       }} />
       <div className="segmented">{(['day', 'week', 'month'] as const).map((value) => (

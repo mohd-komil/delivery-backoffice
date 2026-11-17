@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { act, createElement } from 'react';
+import type { LatLngExpression, Map as LeafletMap, Marker, ZoomPanOptions } from 'leaflet';
 import type { EntranceReviewData, EntranceReviewSave, EntranceSuggestion } from '../src/lib/delivery-entrance';
 import { ApiFixture, button, click, domHarness, editInput, waitFor } from './refresh-fixtures';
 
@@ -8,40 +9,24 @@ const addressKey = '1'.repeat(64);
 const suggested = { latitude: 38.1, longitude: 15.2 };
 const confirmedBy = { id: '925e098b-d537-4e11-86fc-0cdfd5cab04a', name: 'Francesca' };
 
-void test('suggestion remains a reference, while map placement, drag and re-confirmation save only the operator pin', async () => {
+void test('suggestion remains a reference, while Leaflet placement, drag and re-confirmation save only the operator pin without a browser key', async (context) => {
   const page = await domHarness(new ApiFixture());
   try {
     const { ApiError } = await import('../src/lib/api');
     const { DeliveryEntranceReview } = await import('../src/components/delivery-entrance-review');
-    const callbacks: { mapClick?: (event: unknown) => void } = {};
-    const markers: StubMarker[] = [];
-    type Position = { lat: number; lng: number };
-
-    class StubMap {
-      addListener(name: string, callback: (event: unknown) => void) {
-        assert.equal(name, 'click');
-        callbacks.mapClick = callback;
-        return { remove() { delete callbacks.mapClick; } };
-      }
-      setCenter() {}
-      setZoom() {}
+    const leaflet = await import('leaflet');
+    let activeMap: LeafletMap | undefined;
+    const originalView = leaflet.Map.prototype.setView;
+    context.mock.method(leaflet.Map.prototype, 'setView', function (this: LeafletMap, center: LatLngExpression, zoom?: number, options?: ZoomPanOptions) {
+      activeMap = this;
+      return originalView.call(this, center, zoom, options);
+    });
+    function liveMap() { assert.ok(activeMap); return activeMap; }
+    function markers() {
+      const found: Marker[] = [];
+      liveMap().eachLayer((layer) => { if (layer instanceof leaflet.Marker) found.push(layer); });
+      return found;
     }
-    class StubMarker extends HTMLElement {
-      map: object | null = null;
-      position: Position;
-      readonly draggable: boolean;
-      constructor({ position, gmpDraggable }: { position: Position; gmpDraggable: boolean }) {
-        super();
-        this.position = position;
-        this.draggable = gmpDraggable;
-        markers.push(this);
-      }
-    }
-    class StubPin extends HTMLElement {}
-    page.dom.window.customElements.define('entrance-stub-marker', StubMarker);
-    page.dom.window.customElements.define('entrance-stub-pin', StubPin);
-    const libraries = { maps: { Map: StubMap }, core: {}, marker: { AdvancedMarkerElement: StubMarker, PinElement: StubPin }, geometry: {} };
-    Reflect.set(page.dom.window, 'google', { maps: { importLibrary: (name: keyof typeof libraries) => Promise.resolve(libraries[name]) } });
 
     let loads = 0;
     let lookups = 0;
@@ -49,7 +34,7 @@ void test('suggestion remains a reference, while map placement, drag and re-conf
     const saves: EntranceReviewSave[] = [];
     let data: EntranceReviewData = {
       addressKey, deliveryVersion: 2, entrance: null, stale: false, address: { street: 'Demo Street', city: 'Messina', country: 'IT' },
-      referencePoint: null, mapConfig: { key: 'synthetic_test_browser_key' },
+      referencePoint: null, mapConfig: null,
     };
     await page.render(createElement('form', { onSubmit: (event) => { event.preventDefault(); unrelatedSubmits += 1; } }, createElement(DeliveryEntranceReview, {
       load: () => { loads += 1; return Promise.resolve(data); },
@@ -95,29 +80,25 @@ void test('suggestion remains a reference, while map placement, drag and re-conf
     assert.equal(attestation().disabled, true);
     assert.equal(saveButton().disabled, true);
     assert.deepEqual(saves, []);
-    const sdkReady = page.dom.window.__backofficeGoogleMapsReady;
-    assert.ok(sdkReady);
-    await act(async () => { sdkReady(); });
-    await waitFor(() => markers.length === 1, 'reference marker');
-    assert.deepEqual(markers[0]?.position, { lat: suggested.latitude, lng: suggested.longitude });
-    assert.equal(markers[0]?.draggable, false);
-
-    const mapClick = callbacks.mapClick;
-    assert.ok(mapClick);
-    const referencePin = markers[0];
+    await waitFor(() => activeMap !== undefined && markers().length === 1, 'reference marker');
+    assert.equal(body.querySelector('script[src*="maps.googleapis.com"]'), null);
+    assert.match(body.querySelector('.leaflet-control-attribution')?.textContent ?? '', /OpenStreetMap/);
+    const referencePin = markers()[0];
     assert.ok(referencePin);
+    assert.equal(referencePin.getLatLng().lat, suggested.latitude);
+    assert.equal(referencePin.getLatLng().lng, suggested.longitude);
+    assert.equal(referencePin.dragging?.enabled(), false);
     await act(async () => {
-      referencePin.addEventListener('click', (domEvent) => mapClick({ domEvent, latLng: referencePin.position }), { once: true });
-      referencePin.dispatchEvent(new Event('click'));
+      referencePin.getElement()?.click();
     });
     assert.equal(coordinate(0).value, '', 'clicking the suggested marker does not copy it into the editor');
-    await act(async () => { mapClick({ latLng: { lat: () => 38.15, lng: () => 15.21 } }); });
+    await act(async () => { liveMap().fire('click', { latlng: leaflet.latLng(38.15, 15.21) }); });
     assert.equal(saveButton().disabled, true);
-    const operatorPin = markers.find((marker) => marker.draggable);
+    const operatorPin = markers().find((marker) => marker.dragging?.enabled());
     assert.ok(operatorPin);
     await act(async () => {
-      operatorPin.position = { lat: 38.16, lng: 15.22 };
-      operatorPin.dispatchEvent(new Event('gmp-dragend'));
+      operatorPin.setLatLng([38.16, 15.22]);
+      operatorPin.fire('dragend');
     });
     assert.equal(Number(coordinate(0).value), 38.16);
     assert.equal(Number(coordinate(1).value), 15.22);
@@ -138,7 +119,7 @@ void test('suggestion remains a reference, while map placement, drag and re-conf
       { addressKey, deliveryVersion: 2, version: null, point: { latitude: 38.16, longitude: 15.23 }, confirmed: true },
       { addressKey, deliveryVersion: 3, version: null, point: { latitude: 38.16, longitude: 15.23 }, confirmed: true },
     ]);
-    assert.equal(callbacks.mapClick, undefined);
+    assert.equal(body.querySelector('.entrance-leaflet-map'), null);
 
     await openReview();
     await waitFor(() => body.textContent?.includes('Entrance confirmed') === true, 'reused saved entrance');

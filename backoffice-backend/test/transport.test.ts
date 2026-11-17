@@ -119,9 +119,9 @@ void test('transport planning uses real HTTP guards, isolated PostgreSQL and imm
     }
     async function availability(value: DetailValue, from: string, to: string) { return TransportAvailabilitySchema.parse(await success(`${transportPath(value)}/availability?${new URLSearchParams({ from, to })}`)); }
 
-    await context.test('vehicle catalogue persists normalized plates and validates ownership, admin access, origins and versions', async () => {
+    await context.test('vehicle catalogue persists normalized plates and validates ownership, both Backoffice roles, origins and versions', async () => {
       await failure('/vehicles', 401); await failure('/vehicles', 401, 'POST', vehicleInput('Anonymous', 'DEMO ANON'));
-      await failure('/vehicles', 403, 'POST', vehicleInput('Operator cannot edit', 'DEMO DENIED'), operatorCookie);
+      const operatorVehicle=VehicleSchema.parse(await success('/vehicles','POST',vehicleInput('Operator created','DEMO OPERATOR'),operatorCookie));
       await failure('/vehicles', 403, 'POST', vehicleInput('Wrong origin', 'DEMO ORIGIN'), adminCookie, 'https://untrusted.example');
       await failure('/vehicles', 400, 'POST', vehicleInput('', 'DEMO INVALID'), adminCookie);
       await failure('/vehicles', 400, 'POST', vehicleInput('Long name', 'DEMO INVALID', { name: 'A'.repeat(201) }), adminCookie);
@@ -134,7 +134,8 @@ void test('transport planning uses real HTTP guards, isolated PostgreSQL and imm
       const distinctSeparator = await vehicle('DEMO distinct plate', { plate: 'AB123CD' }); assert.notEqual(distinctSeparator.id, value.id);
       const external = await vehicle('DEMO hired van', { ownership: 'external', providerName: 'DEMO fictional carrier', providerContact: '+390000000567' }); assert.equal(external.providerName, 'DEMO fictional carrier');
       const stale = value.version;
-      await failure('/vehicles/' + value.id, 403, 'PATCH', vehicleBody(value), operatorCookie);
+      const operatorChanged=VehicleSchema.parse(await success('/vehicles/'+operatorVehicle.id,'PATCH',vehicleBody(operatorVehicle,{name:'Operator updated'}),operatorCookie));
+      assert.equal(operatorChanged.name,'Operator updated'); assert.equal(operatorChanged.version,2);
       await failure('/vehicles/' + randomUUID(), 404, 'PATCH', vehicleBody(value), adminCookie);
       value = await editVehicle(value, { name: 'DEMO renamed van', notes: 'Synthetic vehicle record' }); assert.equal(value.version, stale + 1);
       await failure('/vehicles/' + value.id, 409, 'PATCH', vehicleBody(value, { version: stale }), adminCookie);

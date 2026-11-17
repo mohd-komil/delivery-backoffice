@@ -124,12 +124,16 @@ void test('amendment review preserves exact visits, shows confirmation reset and
     await page.render(createElement(RouteOperationsPanel, { routeId, revision: 0, catalogs }));
     await waitFor(() => page.container.textContent?.includes('Review changes') === true, 'amendment');
     const detail = button(page.container, 'Review changes').closest('details'); assert.ok(detail);
+    assert.doesNotMatch(detail.textContent ?? '', /driver/i);
     const reason = input(detail, 'input[maxlength="2000"]'); await editInput(reason, 'Change order of stops');
     await toggle(check(detail, 'route has not departed')); await toggle(check(detail, 'cargo has not been loaded'));
     await click(button(detail, 'Review changes'));
     await waitFor(() => detail.textContent?.includes('Customer confirmation will be reset') === true, 'amend review');
     const call = api.calls.find((entry) => entry.pathname.endsWith('/amend-review')); assert.ok(call);
-    assert.deepEqual(routeAmendReviewInputSchema.parse(call.body).plan.stops.map((stop) => stop.appointmentId), appointmentIds);
+    const command = routeAmendReviewInputSchema.parse(call.body);
+    assert.deepEqual(command.plan.stops.map((stop) => stop.appointmentId), appointmentIds);
+    assert.deepEqual(command.plan.planning?.driver, { kind: 'none' });
+    assert.equal(command.externalDriverPhone, undefined);
     const accept = check(detail, 'I reviewed the complete schedule'); await toggle(accept);
     await editInput(reason, 'Corrected reason'); assert.equal(accept.checked, false); assert.equal(button(detail, 'Apply reviewed changes').disabled, true);
     await click(button(detail, 'Review changes')); await waitFor(() => check(detail, 'I reviewed the complete schedule').disabled === false, 'new review');

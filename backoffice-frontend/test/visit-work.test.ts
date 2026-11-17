@@ -134,6 +134,63 @@ void test('booking shows order identities and posts installation residual plus c
   } finally { await page.close(); }
 });
 
+void test('Francesca changes a four-unit line to two installations and can book one of them on the first visit', { concurrency: false }, async () => {
+  const api = new ApiFixture();
+  const item = api.detail.delivery.source.items[0];
+  assert.ok(item);
+  api.detail.delivery.source.items = [{ ...item, name: 'DEMO wardrobe', quantity: 4 }];
+  api.detail.delivery.servicePlan = { defaultService: 'delivery_installation', overrides: [] };
+  api.detail.lineServices = [status(10, {
+    canEditRequiredQuantities: true, requiredQuantitiesCustomized: false,
+    totalDeliveryMilli: 4000, remainingDeliveryMilli: 4000, availableDeliveryMilli: 4000,
+    totalInstallationMilli: 4000, remainingInstallationMilli: 4000, availableInstallationMilli: 4000,
+  })];
+  const { page, document } = await openPanel(api, 'Overview');
+  try {
+    await click(button(document, 'Edit required quantities'));
+    const modal = document.querySelector('.dialog-content.dialog');
+    assert.ok(modal);
+    assert.equal(input(modal, 'input[name="deliveryMilli"]').value, '4');
+    const installation = input(modal, 'input[name="installationMilli"]');
+    assert.equal(installation.value, '4');
+    await editInput(installation, '2');
+    await editInput(input(modal, 'input[name="reason"]'), 'The customer ordered installation of two wardrobes');
+    const response = api.defer(`/deliveries/${deliveryId}/work-quantities`, 'PATCH');
+    await click(button(modal, 'Save required quantities'));
+    assert.equal(response.called, true);
+    const mutation = api.calls.find(({ method }) => method === 'PATCH');
+    assert.deepEqual(mutation?.body, {
+      version: 1, sourceLineId: 10, quantities: { deliveryMilli: 4000, installationMilli: 2000, collectionMilli: 0 },
+      reason: 'The customer ordered installation of two wardrobes',
+    });
+    const line = api.detail.lineServices[0];
+    assert.ok(line);
+    api.detail = { ...api.detail,
+      delivery: { ...api.detail.delivery, version: 2 },
+      lineServices: [{ ...line, totalInstallationMilli: 2000, remainingInstallationMilli: 2000, availableInstallationMilli: 2000, requiredQuantitiesCustomized: true }],
+    };
+    await act(async () => { response.reply(api.detail); });
+    await waitFor(() => hasToast(document, 'Required quantities saved'), 'successful quantity update');
+    assert.match(document.querySelector('.product-row')?.textContent ?? '', /Custom quantities/);
+
+    await click(button(document, 'Visits & tasks'));
+    const form = bookingForm(document);
+    assert.equal(operation(form, 10, 'Delivery').value, '4');
+    const plannedInstallation = operation(form, 10, 'Installation');
+    assert.equal(plannedInstallation.value, '2');
+    assert.equal(plannedInstallation.max, '2');
+    await editInput(plannedInstallation, '1');
+    await fillDates(form);
+    const booking = api.defer(`/deliveries/${deliveryId}/appointments`, 'POST');
+    await submit(form);
+    const booked = api.calls.find(({ method }) => method === 'POST');
+    assert.deepEqual(bookingBody.parse(booked?.body).workLines, [
+      { sourceLineId: 10, deliveryMilli: 4000, installationMilli: 1000, collectionMilli: 0 },
+    ]);
+    await act(async () => { booking.reply({ ...api.detail, delivery: { ...api.detail.delivery, version: 3 } }); });
+  } finally { await page.close(); }
+});
+
 void test('booking retains quantities on every table page and preserves a stale draft until explicit reload', { concurrency: false }, async () => {
   const api = new ApiFixture(); const item = api.detail.delivery.source.items[0]; assert.ok(item);
   api.detail.delivery.source.items = Array.from({ length: 11 }, (_, index) => ({ ...item, sourceLineId: index + 1, name: `DEMO chair ${index + 1}`, quantity: 2 }));

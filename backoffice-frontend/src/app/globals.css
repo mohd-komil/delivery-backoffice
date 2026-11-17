@@ -349,7 +349,53 @@
   .delivery-panel .history-list li:last-child { @apply pb-0; }
   .delivery-panel .history-dot { @apply bg-info-foreground; }
   .delivery-panel .result-card { background: var(--detail-inset); }
-  .delivery-panel [data-visit-transport] { @apply rounded-lg border border-border p-4; background: var(--detail-inset); }
+  .delivery-panel .detail-tab-overview { @apply flex flex-col gap-6; }
+  .delivery-panel .detail-tab-overview > * { @apply my-0; }
+  .delivery-panel .overview-card { @apply min-w-0 p-0; }
+  .delivery-panel .overview-card-header { @apply flex-row flex-wrap items-center justify-between gap-3 rounded-t-xl border-b border-border px-5 py-4; background: var(--detail-inset); }
+  .delivery-panel .overview-card-header .detail-heading { @apply text-base font-semibold; }
+  .delivery-panel .overview-card-header > .badge { @apply ml-auto; }
+  .delivery-panel .overview-card-content { @apply min-w-0 p-5; }
+  .delivery-panel .detail-tab-overview > section > .section-title { @apply -mx-5 -mt-5 rounded-t-xl border-b border-border px-5 py-4; background: var(--detail-inset); }
+  .delivery-panel .detail-tab-overview .customer-card { @apply gap-4 pb-1; }
+  .delivery-panel .detail-tab-overview .customer-card > div { @apply min-w-0 break-words; }
+  .delivery-panel .detail-tab-overview .customer-card p { @apply mt-1 text-sm; }
+  .delivery-panel .detail-tab-overview .detail-grid { @apply gap-px border-0 bg-border; }
+  .delivery-panel .detail-tab-overview .detail-grid > div { @apply border-0 p-3; background: var(--detail-surface); }
+  .delivery-panel .detail-tab-overview .detail-grid > div:last-child:nth-child(odd) { @apply col-span-full; }
+  .delivery-panel .detail-tab-overview .detail-grid dd { @apply text-sm; }
+  .delivery-panel .overview-default-service { @apply my-5 rounded-lg border border-info-foreground/20 bg-info p-4; }
+  .delivery-panel .overview-default-service h4 { @apply text-sm font-semibold; }
+  .delivery-panel .detail-tab-overview .product-row { @apply mt-5 gap-4 rounded-xl border border-border p-4 shadow-xs; background: var(--detail-surface); }
+  .delivery-panel .detail-tab-overview .product-description h4 { @apply text-sm font-semibold; }
+  .delivery-panel .detail-tab-overview .product-photo { @apply bg-muted; }
+  .delivery-panel .overview-work-progress { @apply mt-4 flex flex-wrap gap-2 text-xs; }
+  .delivery-panel .overview-work-progress > div { @apply min-w-36 grow rounded-lg border border-border bg-muted/50 p-3; }
+  .delivery-panel .detail-tab-overview .product-row section { @apply mt-4 rounded-lg p-4; background: var(--detail-inset); }
+  .delivery-panel .detail-tab-overview .product-row section h5 { @apply text-sm font-semibold; }
+  .delivery-panel .detail-tab-overview + .close-section { @apply mt-6; }
+  .delivery-panel .detail-tab-content { @apply flex min-w-0 flex-col gap-6; }
+  .delivery-panel .detail-tab-content > * { @apply my-0; }
+  .delivery-panel .visit-planning-card { @apply border-0 p-0 shadow-none; background: transparent; }
+  .delivery-panel .visit-planning-card > .section-title { @apply mb-3; }
+  .delivery-panel .visit-planning-card > .overview-card { @apply mt-5; }
+  .delivery-panel .visit-planning-card .overview-card .assignment { @apply mt-0 last:mb-0; }
+  .delivery-panel .visit-planning-card .overview-card .assignment h4 { @apply mb-2 text-sm font-semibold; }
+  .delivery-panel .overview-card .scheduling-trigger { @apply w-full text-left; }
+  .delivery-panel .detail-tab-issues details.section-gap,
+  .delivery-panel .visit-planning-card > details { @apply rounded-lg border border-border p-4; background: var(--detail-surface); }
+  .delivery-panel .detail-tab-issues summary { @apply text-sm font-medium; }
+  .delivery-panel .detail-tab-issues .inset-card { @apply border-l-2 border-l-warning-foreground; }
+  .delivery-panel .detail-tab-history .history-list { @apply my-0 border-0 p-0 shadow-none; background: transparent; }
+  .delivery-panel .detail-tab-history .history-list li { @apply pb-5; }
+  .delivery-panel .detail-tab-history .history-list li > div { @apply min-w-0 grow rounded-lg border border-border p-4; background: var(--detail-inset); }
+  .delivery-panel .detail-tab-history .history-list h4 { @apply text-sm font-semibold; }
+  .delivery-panel .detail-tab-history .history-list summary { @apply mt-2 text-xs; }
+  .delivery-panel .detail-tab-history .history-dot { @apply mt-5; }
+  .delivery-panel .detail-tab-history .inset-card > .overview-card { @apply mt-4; }
+  .delivery-panel .overview-card .overview-card { @apply mt-4; }
+  .delivery-panel .overview-card .overview-card .overview-card-header { @apply py-3; }
+  .delivery-panel [data-visit-transport] { @apply min-w-0; }
   .file-list { @apply mt-5 flex flex-col gap-3.5; }
   .file-card { @apply flex items-center gap-4 rounded-lg border border-border p-4; }
   .file-card img { @apply max-w-24 rounded-md object-cover; }
@@ -454,10 +500,36 @@
   .calendar-controls { @apply gap-1.5; } .segmented button { @apply px-2 py-1.5; }
   .delivery-panel .panel-symbol { @apply hidden; }
   .delivery-panel .detail-section, .delivery-panel .visit-card, .delivery-panel .inset-card { @apply p-4; }
-  .delivery-panel .assignment, .delivery-panel .visit-editor, .delivery-panel [data-visit-transport] { @apply p-3; }
+  .delivery-panel .overview-card { @apply p-0; }
+  .delivery-panel .overview-card-header, .delivery-panel .overview-card-content { @apply p-4; }
+  .delivery-panel .detail-tab-overview > section > .section-title { @apply -mx-4 -mt-4 px-4; }
+  .delivery-panel .assignment, .delivery-panel .visit-editor { @apply p-3; }
+  .delivery-panel .visit-planning-card { @apply p-0; }
 }
 @layer utilities {
   /* Keep the error border/ring visible over the input's focus utilities. */
   .delivery-panel input[aria-invalid=true], .delivery-panel select[aria-invalid=true] { @apply border-destructive ring-2 ring-destructive/20; }
 }
-@media (prefers-reduced-motion:reduce) { .spinner { @apply animate-none; } * { scroll-behavior:auto!important; } .delivery-panel .panel-tabs button, .delivery-panel .scheduling-trigger { transition: none; } }
+/* Radix Presence keeps controlled dialogs in the tree for these exit animations. */
+@keyframes dialog-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dialog-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes dialog-enter { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: scale(1); } }
+@keyframes dialog-exit { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(.97); } }
+@keyframes drawer-right-enter { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes drawer-right-exit { from { transform: translateX(0); } to { transform: translateX(100%); } }
+@keyframes drawer-left-enter { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes drawer-left-exit { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+.dialog-overlay[data-state=open] { animation: dialog-fade-in 180ms ease-out; }
+.dialog-overlay[data-state=closed] { animation: dialog-fade-out 180ms ease-in; }
+.dialog-content[data-state=open] { animation: dialog-enter 200ms cubic-bezier(.2,.8,.2,1); }
+.dialog-content[data-state=closed] { animation: dialog-exit 180ms ease-in; pointer-events: none; }
+.dialog-content.delivery-panel[data-state=open] { animation-name: drawer-right-enter; }
+.dialog-content.delivery-panel[data-state=closed] { animation-name: drawer-right-exit; }
+.dialog-content.navigation-drawer[data-state=open] { animation-name: drawer-left-enter; }
+.dialog-content.navigation-drawer[data-state=closed] { animation-name: drawer-left-exit; }
+[data-slot=popover-content] { transform-origin: var(--radix-popover-content-transform-origin); }
+[data-slot=popover-content][data-state=open] { animation: dialog-enter 140ms ease-out; }
+[data-slot=popover-content][data-state=closed] { animation: dialog-exit 100ms ease-in; }
+.dialog-content.visit-scheduling-dialog { width: min(900px, 94vw); max-width: 900px; }
+.visit-scheduling-dialog > .section-title { position: sticky; top: -1.75rem; z-index: 1; margin: -1.75rem -1.75rem 1.25rem; padding: 1.25rem 1.75rem; background: var(--background); border-bottom: 1px solid var(--border); }
+@media (prefers-reduced-motion:reduce) { .spinner { @apply animate-none; } * { scroll-behavior:auto!important; } .delivery-panel .panel-tabs button, .delivery-panel .scheduling-trigger { transition: none; } .dialog-content[data-state], .dialog-overlay[data-state], [data-slot=popover-content][data-state] { animation: none; } }

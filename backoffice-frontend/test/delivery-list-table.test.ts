@@ -70,7 +70,7 @@ void test('delivery list shows required planning fields and remaining estimate w
     const document = page.dom.window.document;
     assert.match(cell(document, 'Delivery / sales orders').textContent ?? '', /DEMO\/TABLE\/01.*SO\/ONE, SO\/TWO/);
     assert.match(cell(document, 'Customer & destination').textContent ?? '', /Synthetic customer.*Via sintetica 12.*Catania, CT, 00100, IT/);
-    assert.match(cell(document, 'Customer & destination').textContent ?? '', /ServiceInstallation only/);
+    assert.match(cell(document, 'Customer & destination').textContent ?? '', /Product services\s*Installation only$/);
     assert.equal(cell(document, 'Delivery status').textContent, 'partially completedAssigned teamsNot assigned');
     assert.equal(cell(document, 'Scheduled visit').textContent, 'Not scheduled');
     assert.match(cell(document, 'Remaining work').textContent ?? '', /≈ 30 min.*Provisional proportional estimate.*Original source estimate: 120 min/);
@@ -83,6 +83,33 @@ void test('delivery list shows required planning fields and remaining estimate w
     await click(openIcon);
     assert.deepEqual(opened, [item.id, item.id]);
     assert.deepEqual(api.calls, []);
+  } finally { await page.close(); }
+});
+
+void test('Inbox shows product services and a second line only for a differing known default', async () => {
+  const page = await domHarness(new ApiFixture());
+  try {
+    const { DeliveryListTable } = await import('../src/components/delivery-list-table');
+    const override = rowFixture();
+    const [product] = override.source.items;
+    assert.ok(product);
+    const overrides = [{ sourceLineId: product.sourceLineId, service: 'delivery_only' as const }];
+    override.servicePlan = { defaultService: 'installation_only', overrides };
+    const mixed = { ...override, id: firstVisitId, source: {
+      ...override.source, items: [product, { ...product, sourceLineId: product.sourceLineId + 1 }],
+    } };
+    const unknownDefault = { ...override, id: secondVisitId, servicePlan: { defaultService: null, overrides } };
+    const props = { items: [override, mixed, unknownDefault], selected: null, onOpen: () => undefined };
+    await page.render(createElement(DeliveryListTable, { ...props, view: 'inbox' }));
+    const document = page.dom.window.document;
+    assert.match(cell(document, 'Customer & destination', 0).textContent ?? '',
+      /Product services\s*Delivery only\s*Default service\s*·\s*Installation only$/);
+    assert.match(cell(document, 'Customer & destination', 1).textContent ?? '',
+      /Product services\s*Mixed services\s*Default service\s*·\s*Installation only$/);
+    assert.match(cell(document, 'Customer & destination', 2).textContent ?? '', /Product services\s*Delivery only$/);
+
+    await page.render(createElement(DeliveryListTable, { ...props, view: 'planned' }));
+    assert.match(cell(document, 'Customer & destination', 0).textContent ?? '', /Service\s*Delivery only$/);
   } finally { await page.close(); }
 });
 

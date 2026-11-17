@@ -24,7 +24,7 @@ export function DeliveryWorkReadiness({ delivery, release }: { delivery: Deliver
           {hold.issueId ? <a className="underline underline-offset-4" href={`#issue-${hold.issueId}`}>{t('linkedIssue', { id: hold.issueId.slice(0, 8) })}</a> : null}
           {hold.release ? <><p>{t('releaseRecord', { name: hold.release.by.name, date: formatDateTime(hold.release.at, locale) })}</p><p className="whitespace-pre-wrap break-words">{hold.release.note}</p></> : null}
         </div>)}
-        {blocked && release && !delivery.completedAt ? <ActionForm dataVersion={delivery.version} submitLabel={t('release')} successMessage={t('releaseSaved')} onSubmit={async (data) => release(sourceLineId, textField(data, 'readinessNote'))}><Field label={t('releaseNote')}><textarea name="readinessNote" required minLength={1} maxLength={2000} rows={2} /></Field></ActionForm> : null}
+        {blocked && release && !delivery.completedAt ? <ActionForm dataVersion={delivery.version} followLatestWhenUntouched submitLabel={t('release')} successMessage={t('releaseSaved')} onSubmit={async (data) => release(sourceLineId, textField(data, 'readinessNote'))}><Field label={t('releaseNote')}><textarea name="readinessNote" required minLength={1} maxLength={2000} rows={2} /></Field></ActionForm> : null}
       </article>;
     })}
   </section>;

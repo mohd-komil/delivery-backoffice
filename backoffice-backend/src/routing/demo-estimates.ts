@@ -42,10 +42,15 @@ const demoLegs = [
 
 const minutesByLeg = new Map(demoLegs.map(([from, to, minutes]) => [directedRoutePair(from, to), minutes]));
 
-export function getDemoRouteEstimates(chain: readonly string[]): RouteTravelEstimate[] {
+export function getDemoRouteEstimates(chain: readonly string[], coordinates?: ReadonlyMap<string, RoutePointCoordinates>): RouteTravelEstimate[] {
   return chain.slice(1).flatMap((toPointId, index) => {
     const fromPointId = chain[index];
     if (fromPointId === undefined) return [];
+    if (coordinates && [fromPointId, toPointId].some((pointId) => {
+      const original = routeDepots.find(({ id }) => id === pointId);
+      const current = coordinates.get(pointId);
+      return original && (!current || original.latitude !== current.latitude || original.longitude !== current.longitude);
+    })) return [];
     const minutes = minutesByLeg.get(directedRoutePair(fromPointId, toPointId));
     return minutes === undefined ? [] : [{ fromPointId, toPointId, minutes, source: 'demo' }];
   });

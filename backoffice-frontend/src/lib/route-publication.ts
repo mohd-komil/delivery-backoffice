@@ -24,6 +24,7 @@ export const publicationSummarySchema = z.object({
 });
 export type PublicationSummary = z.infer<typeof publicationSummarySchema>;
 export const publicationReviewSchema = z.object({
+  calendar: routePreviewSchema.shape.calendar, locations: routePreviewSchema.shape.locations,
   routeId: id, draftVersion: z.number().int().positive(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
   publicationEnabled: z.boolean(), timeline: routePreviewSchema.shape.timeline,
   feasibility: routePreviewSchema.shape.feasibility.unwrap(),

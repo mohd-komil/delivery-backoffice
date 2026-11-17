@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { QueryFailedError, type EntityManager } from 'typeorm';
 import { z } from 'zod';
 import { rows } from '../database/database';
@@ -18,7 +18,6 @@ const PersonSelect=`SELECT p.id,p.version,${PERSON_NAME_SQL} AS name,p.legacy_na
   p.phone_number AS "phoneNumber",p.address,p.login,p.external,p.enabled,(p.password_hash IS NOT NULL) AS "hasPassword",
   COALESCE((SELECT jsonb_agg(ps.skill_id ORDER BY ps.skill_id) FROM participant_skill ps WHERE ps.person_id=p.id),'[]'::jsonb) AS "skillIds" FROM person p`;
 
-function requireAdmin(actor:OperatorActor):void {if(actor.role!=='admin') throw new ForbiddenException('Administrator permission required');}
 export function distinctParticipants(ids:string[]):void {
   if(new Set(ids).size!==ids.length) throw new BadRequestException('A participant can appear only once in this selection');
 }
@@ -56,7 +55,7 @@ export class Participants {
   }
 
   async save(id:string|null,input:unknown,actor:OperatorActor):Promise<Participant> {
-    requireAdmin(actor);
+    // Authenticated Backoffice roles manage participant profiles and Crew credentials, never app_user roles.
     const command=id?UpdateParticipantInput.parse(input):CreateParticipantInput.parse(input);
     const personId=id?IdSchema.parse(id).toLowerCase():randomUUID();
     const passwordHash=command.password===undefined?null:await hashPassword(command.password);
@@ -108,7 +107,6 @@ export class Participants {
   }
 
   async saveSkills(id:string,input:unknown,actor:OperatorActor):Promise<Participant> {
-    requireAdmin(actor);
     const command=ParticipantSkillsInput.parse(input);
     const personId=IdSchema.parse(id).toLowerCase();
     return this.store.db.source.transaction(async(manager)=>{
@@ -134,7 +132,6 @@ export class Participants {
   }
 
   async saveCrew(id:string|null,input:unknown,actor:OperatorActor) {
-    requireAdmin(actor);
     const command=id?CrewUpdateInput.parse(input):CrewCreateInput.parse(input);
     const participantIds=command.participantIds.map((personId)=>personId.toLowerCase());
     distinctParticipants(participantIds);

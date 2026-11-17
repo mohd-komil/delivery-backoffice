@@ -2,9 +2,51 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { VisitDetail } from '../src/shared/api/contracts';
 import { actualStartOptions } from '../src/_pages/visit-detail/model/actual-start';
+import { readFinishEvidence } from '../src/_pages/visit-detail/model/finish-evidence';
 import { readItemChecks } from '../src/_pages/visit-detail/model/item-check';
 import { selectFinishPhotos } from '../src/_pages/visit-detail/model/photo';
 import { enteredQuantityMilli, readFinishQuantities } from '../src/_pages/visit-detail/model/quantity';
+import { emptySignatures, type SignaturePair } from '../src/_pages/visit-detail/model/signature';
+
+const signatures: SignaturePair = {
+  customer: [[{ x: 2, y: 10 }, { x: 32, y: 70 }]],
+  crew: [[{ x: 20, y: 5 }, { x: 40, y: 25 }]],
+};
+const partialInstallation = [{ sourceLineId: 21, deliveredMilli: 0, installedMilli: 1000 }];
+
+void test('refusal uses crew ink, performed quantities and photo evidence without retaining earlier customer ink', () => {
+  const fields = new FormData();
+  fields.set('signatureOutcome', 'refused');
+  fields.set('customerSignerName', 'Unused name from a prior draft');
+  assert.deepEqual(readFinishEvidence(fields, signatures, [], 1), { ok: false, error: { field: 'refusalWork' } });
+  assert.deepEqual(readFinishEvidence(fields, signatures, partialInstallation, 1), { ok: false, error: { field: 'refusalReason' } });
+  fields.set('refusalReason', '  Customer declined to sign after installation.  ');
+  assert.deepEqual(readFinishEvidence(fields, signatures, partialInstallation, 0), { ok: false, error: { field: 'photos' } });
+  assert.deepEqual(readFinishEvidence(fields, emptySignatures, partialInstallation, 1), { ok: false, error: { field: 'signature', role: 'crew' } });
+  assert.deepEqual(readFinishEvidence(fields, signatures, partialInstallation, 1), { ok: true, evidence: {
+    signatureRefusal: { reason: 'Customer declined to sign after installation.' }, crewSignature: { strokes: signatures.crew },
+  } });
+});
+
+void test('prohibited photo exception requires a separate explanation and cannot carry photos or bypass normal signing', () => {
+  const fields = new FormData();
+  fields.set('signatureOutcome', 'refused');
+  fields.set('refusalReason', 'Customer declined to sign.');
+  fields.set('photoProhibited', 'yes');
+  assert.deepEqual(readFinishEvidence(fields, signatures, partialInstallation, 0), { ok: false, error: { field: 'noPhotoReason' } });
+  fields.set('noPhotoReason', '  Customer prohibited photography inside.  ');
+  assert.deepEqual(readFinishEvidence(fields, signatures, partialInstallation, 1), { ok: false, error: { field: 'refusalPhotoConflict' } });
+  assert.deepEqual(readFinishEvidence(fields, signatures, partialInstallation, 0), { ok: true, evidence: {
+    signatureRefusal: { reason: 'Customer declined to sign.', noPhotoReason: 'Customer prohibited photography inside.' },
+    crewSignature: { strokes: signatures.crew },
+  } });
+  fields.set('signatureOutcome', 'signed');
+  fields.set('customerSignerName', '  Maria D’Angelo  ');
+  assert.deepEqual(readFinishEvidence(fields, signatures, partialInstallation, 0), { ok: false, error: { field: 'photos' } });
+  assert.deepEqual(readFinishEvidence(fields, signatures, partialInstallation, 1), { ok: true, evidence: {
+    customerSignature: { signerName: 'Maria D’Angelo', strokes: signatures.customer }, crewSignature: { strokes: signatures.crew },
+  } });
+});
 
 void test('result quantities keep milli precision for dot and comma and do not coerce invalid input', () => {
   assert.equal(enteredQuantityMilli('1,023'), 1023);

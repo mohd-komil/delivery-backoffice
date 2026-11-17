@@ -1,7 +1,7 @@
 export const en = {
-  title: 'Whole-trip checks', resources: 'People, working hours & driver', help: 'Enter the actual people and date-specific availability for this draft. Checks include the return journey. Saving a draft does not reserve resources.',
+  title: 'Whole-trip checks', resources: 'Crew & vehicle availability', help: 'Enter the actual people and date-specific availability for this draft. Checks include the return journey. Saving a draft does not reserve resources.',
   participants: 'Actual participants', roster: 'Select this crew’s current members', hours: 'Working intervals', breaks: 'Breaks & absences', add: 'Add interval', remove: 'Remove last interval', start: 'From', end: 'Until', break: 'Break', absence: 'Absence',
-  driver: 'Driver', unknown: 'Not specified', external: 'External driver', driverName: 'External driver name', driverHours: 'External driver availability', vehicleHours: 'Confirmed vehicle availability', buffer: 'Transfer buffer before / after the trip (min)', bufferHelp: 'Used to check neighbouring bookings. Empty means the transfer allowance is unknown.',
+  driver: 'Driver', unknown: 'Not specified', vehicleHours: 'Confirmed vehicle availability', buffer: 'Transfer buffer before / after the trip (min)', bufferHelp: 'Used to check neighbouring bookings. Empty means the transfer allowance is unknown.',
   window: 'Customer window meaning', unrestricted: 'No customer time restriction', arrival: 'Arrival within the window', work_end: 'Finish work within the window', windowStart: 'Window opens', windowEnd: 'Window closes',
   durationSource: 'Work time source', manual: 'Manual estimate', remaining_estimate: 'Estimate for selected remaining work', review: 'Confirm selected work & duration', workChanged: 'Selected work has changed or has not been reviewed.',
   conflict: 'Conflicts found', insufficient_data: 'More information needed', feasible_estimate: 'Fits the entered constraints · estimates', stale: 'Previous check. Recalculating current changes…', checked: 'Checked {date}',
@@ -12,9 +12,9 @@ export const en = {
   eta: 'ETA', wait: 'Waiting', finish: 'Work ends', return: 'Return', total: 'Total', travel: 'Travel', orders: '{count} orders checked', saved: '{minutes} min less travel',
 };
 export const it = {
-  title: 'Verifiche dell’intero giro', resources: 'Persone, orari e autista', help: 'Indica le persone effettive e la disponibilità per la data della bozza. La verifica include il ritorno. Salvare non prenota risorse.',
+  title: 'Verifiche dell’intero giro', resources: 'Disponibilità della squadra e del veicolo', help: 'Indica le persone effettive e la disponibilità per la data della bozza. La verifica include il ritorno. Salvare non prenota risorse.',
   participants: 'Partecipanti effettivi', roster: 'Seleziona i membri attuali della squadra', hours: 'Intervalli di lavoro', breaks: 'Pause e assenze', add: 'Aggiungi intervallo', remove: 'Rimuovi ultimo intervallo', start: 'Dalle', end: 'Alle', break: 'Pausa', absence: 'Assenza',
-  driver: 'Autista', unknown: 'Non specificato', external: 'Autista esterno', driverName: 'Nome autista esterno', driverHours: 'Disponibilità autista esterno', vehicleHours: 'Disponibilità confermata del veicolo', buffer: 'Margine di trasferimento prima / dopo il giro (min)', bufferHelp: 'Per verificare prenotazioni vicine. Vuoto significa margine non noto.',
+  driver: 'Autista', unknown: 'Non specificato', vehicleHours: 'Disponibilità confermata del veicolo', buffer: 'Margine di trasferimento prima / dopo il giro (min)', bufferHelp: 'Per verificare prenotazioni vicine. Vuoto significa margine non noto.',
   window: 'Significato della fascia cliente', unrestricted: 'Nessun vincolo orario cliente', arrival: 'Arrivo nella fascia', work_end: 'Fine lavori nella fascia', windowStart: 'Inizio fascia', windowEnd: 'Fine fascia',
   durationSource: 'Fonte del tempo di lavoro', manual: 'Stima manuale', remaining_estimate: 'Stima del lavoro residuo selezionato', review: 'Conferma lavoro e durata selezionati', workChanged: 'Il lavoro selezionato è cambiato o non è stato verificato.',
   conflict: 'Conflitti rilevati', insufficient_data: 'Servono altre informazioni', feasible_estimate: 'Rispetta i vincoli inseriti · stime', stale: 'Verifica precedente. Ricalcolo in corso…', checked: 'Verificato {date}',
@@ -25,9 +25,9 @@ export const it = {
   eta: 'Arrivo', wait: 'Attesa', finish: 'Fine lavori', return: 'Ritorno', total: 'Totale', travel: 'Viaggio', orders: '{count} ordini verificati', saved: '{minutes} min di viaggio in meno',
 };
 export const ru = {
-  title: 'Проверка всего рейса', resources: 'Сотрудники, рабочее время и водитель', help: 'Укажите фактических сотрудников и доступность на дату этого черновика. Проверка включает обратную дорогу. Сохранение не бронирует ресурсы.',
+  title: 'Проверка всего рейса', resources: 'Доступность бригады и машины', help: 'Укажите фактических сотрудников и доступность на дату этого черновика. Проверка включает обратную дорогу. Сохранение не бронирует ресурсы.',
   participants: 'Фактические участники', roster: 'Выбрать текущий состав бригады', hours: 'Рабочие интервалы', breaks: 'Перерывы и отсутствие', add: 'Добавить интервал', remove: 'Удалить последний интервал', start: 'С', end: 'До', break: 'Перерыв', absence: 'Отсутствие',
-  driver: 'Водитель', unknown: 'Не уточнено', external: 'Внешний водитель', driverName: 'Имя внешнего водителя', driverHours: 'Доступность внешнего водителя', vehicleHours: 'Подтверждённая доступность машины', buffer: 'Запас на переезд до / после рейса (мин)', bufferHelp: 'Для проверки соседних назначений. Пустое поле означает неизвестный запас.',
+  driver: 'Водитель', unknown: 'Не уточнено', vehicleHours: 'Подтверждённая доступность машины', buffer: 'Запас на переезд до / после рейса (мин)', bufferHelp: 'Для проверки соседних назначений. Пустое поле означает неизвестный запас.',
   window: 'Смысл клиентского окна', unrestricted: 'Ограничений времени нет', arrival: 'Прибытие в пределах окна', work_end: 'Завершение работ в пределах окна', windowStart: 'Начало окна', windowEnd: 'Конец окна',
   durationSource: 'Источник времени работ', manual: 'Ручная оценка', remaining_estimate: 'Оценка выбранного остатка', review: 'Подтвердить выбранные работы и время', workChanged: 'Выбранные работы изменились или ещё не проверены.',
   conflict: 'Есть конфликты', insufficient_data: 'Недостаточно данных', feasible_estimate: 'Укладывается в указанные ограничения · оценка', stale: 'Предыдущая проверка. Пересчитываем изменения…', checked: 'Проверено {date}',
@@ -38,9 +38,9 @@ export const ru = {
   eta: 'Прибытие', wait: 'Ожидание', finish: 'Конец работ', return: 'Возврат', total: 'Всего', travel: 'Дорога', orders: 'Проверено вариантов: {count}', saved: 'На {minutes} мин меньше дороги',
 };
 export const uz = {
-  title: 'Butun reys tekshiruvi', resources: 'Xodimlar, ish vaqti va haydovchi', help: 'Ushbu qoralama sanasi uchun haqiqiy xodimlar va bo‘sh vaqtini kiriting. Qaytish yo‘li ham tekshiriladi. Saqlash resurslarni band qilmaydi.',
+  title: 'Butun reys tekshiruvi', resources: 'Jamoa va mashinaning bo‘sh vaqti', help: 'Ushbu qoralama sanasi uchun haqiqiy xodimlar va bo‘sh vaqtini kiriting. Qaytish yo‘li ham tekshiriladi. Saqlash resurslarni band qilmaydi.',
   participants: 'Haqiqiy ishtirokchilar', roster: 'Jamoaning joriy a’zolarini tanlash', hours: 'Ish oraliqlari', breaks: 'Tanaffuslar va yo‘qlik', add: 'Oraliq qo‘shish', remove: 'Oxirgi oraliqni olib tashlash', start: 'Boshlanish', end: 'Tugash', break: 'Tanaffus', absence: 'Yo‘qlik',
-  driver: 'Haydovchi', unknown: 'Aniqlanmagan', external: 'Tashqi haydovchi', driverName: 'Tashqi haydovchi ismi', driverHours: 'Tashqi haydovchi bo‘sh vaqti', vehicleHours: 'Mashinaning tasdiqlangan bo‘sh vaqti', buffer: 'Reysdan oldin / keyin o‘tish zaxirasi (daq)', bufferHelp: 'Qo‘shni bandliklar tekshiriladi. Bo‘sh qiymat noma’lum zaxirani bildiradi.',
+  driver: 'Haydovchi', unknown: 'Aniqlanmagan', vehicleHours: 'Mashinaning tasdiqlangan bo‘sh vaqti', buffer: 'Reysdan oldin / keyin o‘tish zaxirasi (daq)', bufferHelp: 'Qo‘shni bandliklar tekshiriladi. Bo‘sh qiymat noma’lum zaxirani bildiradi.',
   window: 'Mijoz vaqt oynasining ma’nosi', unrestricted: 'Mijoz vaqt cheklovi yo‘q', arrival: 'Oyna ichida kelish', work_end: 'Oyna ichida ishni tugatish', windowStart: 'Oyna boshlanishi', windowEnd: 'Oyna tugashi',
   durationSource: 'Ish vaqti manbasi', manual: 'Qo‘lda baholash', remaining_estimate: 'Tanlangan qolgan ish bahosi', review: 'Tanlangan ish va vaqtni tasdiqlash', workChanged: 'Tanlangan ish o‘zgargan yoki tekshirilmagan.',
   conflict: 'Ziddiyatlar bor', insufficient_data: 'Ma’lumot yetarli emas', feasible_estimate: 'Kiritilgan cheklovlarga mos · taxmin', stale: 'Oldingi tekshiruv. Qayta hisoblanmoqda…', checked: '{date} tekshirildi',

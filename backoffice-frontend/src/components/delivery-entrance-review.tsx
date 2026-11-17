@@ -5,18 +5,20 @@ import { useLocale, useTranslations } from 'next-intl';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { toast } from 'sonner';
 import { ApiError, errorMessage } from '@/lib/api';
-import type { EntrancePoint, EntranceReviewData, EntranceReviewSave, EntranceSuggestion } from '@/lib/delivery-entrance';
+import type { EntranceReviewData, EntranceReviewSave, EntranceSuggestion } from '@/lib/delivery-entrance';
 import { coordinateFromText, mapCoordinatesSchema } from '@/lib/map-coordinates';
 import { formatDateTime } from '@/lib/time';
-import { GoogleMapsAuthenticationError, loadGoogleMaps, mountGoogleEntranceMap, onGoogleMapsAuthFailure, type MapPin } from '@/lib/google-maps';
+import { EntranceLocationMap } from './entrance-location-map';
+import { GeocodingAttribution } from './delivery-geocoding';
 import { Button } from './ui/button';
-import { Dialog, DialogContent, DialogTitle } from './ui/dialog';
+import { Dialog, DialogContent, DialogTitle, useDialogState } from './ui/dialog';
 import { Input } from './ui/input';
 import { Field, Notice, Pending } from './ui';
 
 type ReviewActions = {
   load: (signal: AbortSignal) => Promise<EntranceReviewData>;
   suggest: (addressKey: string, signal: AbortSignal) => Promise<EntranceSuggestion>;
+  find?: (addressKey: string, signal: AbortSignal) => Promise<EntranceSuggestion>;
   save: (input: EntranceReviewSave) => Promise<EntranceReviewData>;
 };
 
@@ -32,19 +34,23 @@ const suggestionMessages = {
   rate_limited: 'suggestionRateLimited',
   missing_address: 'suggestionMissingAddress',
   outside_demo: 'suggestionOutsideDemo',
+  not_requested: 'suggestionNotRequested',
+  invalid_address: 'suggestionInvalidAddress',
+  pending: 'suggesting',
+  quota_exceeded: 'suggestionQuotaExceeded',
 } as const satisfies Record<EntranceSuggestion['status'], string>;
 
-export function DeliveryEntranceReview({ load, suggest, save, disabled }: ReviewActions & { disabled?: boolean }) {
+export function DeliveryEntranceReview({ load, suggest, find, save, disabled }: ReviewActions & { disabled?: boolean }) {
   const t = useTranslations('entranceReview');
-  const [open, setOpen] = useState(false);
+  const [mounted, setMounted, open] = useDialogState<boolean>();
 
-  return <Dialog open={open} onOpenChange={setOpen}>
+  return <Dialog open={open} onOpenChange={(next) => setMounted(next ? true : null)}>
     <DialogPrimitive.Trigger asChild><Button type="button" variant="outline" size="sm" disabled={disabled}>{t('open')}</Button></DialogPrimitive.Trigger>
-    {open ? <EntranceReviewEditor load={load} suggest={suggest} save={save} onClose={() => setOpen(false)} /> : null}
+    {mounted ? <EntranceReviewEditor load={load} suggest={suggest} find={find} save={save} onClose={() => setMounted(null)} /> : null}
   </Dialog>;
 }
 
-function EntranceReviewEditor({ load, suggest, save, onClose }: ReviewActions & { onClose: () => void }) {
+function EntranceReviewEditor({ load, suggest, find, save, onClose }: ReviewActions & { onClose: () => void }) {
   const t = useTranslations('entranceReview');
   const locale = useLocale();
   const title = useRef<HTMLHeadingElement>(null);
@@ -60,6 +66,7 @@ function EntranceReviewEditor({ load, suggest, save, onClose }: ReviewActions & 
   const [resolved, setResolved] = useState<{ key: string; value: EntranceSuggestion | null } | null>(null);
   const requestAddress = useEffectEvent(load);
   const requestSuggestion = useEffectEvent(suggest);
+  const findAddress = useEffectEvent(find ?? suggest);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -87,7 +94,7 @@ function EntranceReviewEditor({ load, suggest, save, onClose }: ReviewActions & 
     if (!suggestionAddressKey) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      void requestSuggestion(suggestionAddressKey, controller.signal).then(
+      void (suggestionAttempt > 0 ? findAddress(suggestionAddressKey, controller.signal) : requestSuggestion(suggestionAddressKey, controller.signal)).then(
         (value) => {
           if (controller.signal.aborted) return;
           setResolved({ key: suggestionKey, value: value.addressKey === suggestionAddressKey ? value : null });
@@ -96,7 +103,7 @@ function EntranceReviewEditor({ load, suggest, save, onClose }: ReviewActions & 
       );
     }, 0);
     return () => { controller.abort(); window.clearTimeout(timer); };
-  }, [suggestionAddressKey, suggestionKey]);
+  }, [suggestionAddressKey, suggestionKey, suggestionAttempt]);
 
   const loading = loaded?.revision !== revision;
   const activeDraft = draft?.addressKey === data?.addressKey ? draft : null;
@@ -111,7 +118,8 @@ function EntranceReviewEditor({ load, suggest, save, onClose }: ReviewActions & 
   const suggesting = !!suggestionKey && resolved?.key !== suggestionKey;
   const suggestion = suggestionKey && resolved?.key === suggestionKey ? resolved.value : null;
   const reference = referencePoint ?? suggestion?.point ?? null;
-  const referenceLabel = t(referencePoint || suggestion?.source === 'source' ? 'sourceReference' : 'providerReference');
+  const referenceLabel = t(data?.referenceGeocoding || suggestion?.source === 'geoapify' ? 'geoapifyReference' : referencePoint || suggestion?.source === 'source' ? 'sourceReference' : 'providerReference');
+  const attribution = data?.referenceGeocoding?.attribution ?? (suggestion?.point ? suggestion.attribution : undefined);
 
   function updateDraft(changes: Partial<Pick<Draft, 'latitude' | 'longitude' | 'confirmed'>>) {
     if (!data || savingRef.current) return;
@@ -174,11 +182,13 @@ function EntranceReviewEditor({ load, suggest, save, onClose }: ReviewActions & 
             onClick={() => setManualRequest((current) => ({ addressKey: data.addressKey, attempt: (current?.attempt ?? 0) + 1 }))}
           >{t('suggest')}</Button> : null}
         </div>
-        <EntranceMap
-          config={data.mapConfig} entrance={point} reference={reference} referenceLabel={referenceLabel}
+        <EntranceLocationMap
+          entrance={point} reference={reference} referenceLabel={referenceLabel}
           disabled={saveState.pending || loading}
           onPlace={(next) => updateDraft({ latitude: next.latitude.toFixed(7), longitude: next.longitude.toFixed(7) })}
         />
+        {data.referenceGeocoding || suggestion?.source === 'geoapify' ? <GeocodingAttribution /> : null}
+        {attribution ? <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{attribution}</p> : null}
       </div>
       <fieldset disabled={saveState.pending || loading} className="space-y-3">
         <div className="grid gap-3 sm:grid-cols-2">
@@ -211,74 +221,4 @@ function EntranceReviewEditor({ load, suggest, save, onClose }: ReviewActions & 
       <Button type="button" disabled={!canSave || saveState.pending} onClick={() => { void confirm(); }}>{t(saveState.pending ? 'saving' : 'save')}</Button>
     </div>
   </DialogContent>;
-}
-
-function EntranceMap({ config, entrance, reference, referenceLabel, disabled, onPlace }: {
-  config: EntranceReviewData['mapConfig'];
-  entrance: EntrancePoint | null;
-  reference: EntrancePoint | null;
-  referenceLabel: string;
-  disabled: boolean;
-  onPlace: (point: EntrancePoint) => void;
-}) {
-  const t = useTranslations('entranceReview');
-  const canvas = useRef<HTMLDivElement>(null);
-  const [revision, retry] = useState(0);
-  const [map, setMap] = useState<ReturnType<typeof mountGoogleEntranceMap> | null>(null);
-  const [failure, setFailure] = useState<'load' | 'auth' | null>(null);
-  const place = useEffectEvent((point: EntrancePoint) => { if (!disabled) onPlace(point); });
-  const key = config?.key;
-  const mapId = config?.mapId;
-
-  useEffect(() => {
-    const element = canvas.current;
-    if (!key || !element) return;
-    let active = true;
-    let mounted: ReturnType<typeof mountGoogleEntranceMap> | undefined;
-    const unsubscribe = onGoogleMapsAuthFailure(() => { if (active) setFailure('auth'); });
-    void loadGoogleMaps(key).then((libraries) => {
-      if (!active) return;
-      mounted = mountGoogleEntranceMap(element, libraries, mapId ?? 'DEMO_MAP_ID', ({ lat, lng }) => place({ latitude: lat, longitude: lng }));
-      setMap(mounted);
-    }).catch((error: unknown) => {
-      if (active) setFailure((current) => current ?? (error instanceof GoogleMapsAuthenticationError ? 'auth' : 'load'));
-    });
-    return () => { active = false; unsubscribe(); mounted?.destroy(); };
-  }, [key, mapId, revision]);
-
-  const entranceTitle = t('ownEntrance');
-  useEffect(() => {
-    if (!map || failure) return;
-    const pin = (point: EntrancePoint, title: string, editable: boolean): MapPin => ({
-      position: { lat: point.latitude, lng: point.longitude }, title, glyph: editable ? '✓' : '•', depot: !editable,
-    });
-    try {
-      map.update(entrance ? pin(entrance, entranceTitle, true) : null, reference ? pin(reference, referenceLabel, false) : null);
-    } catch {
-      let outdated = false;
-      queueMicrotask(() => { if (!outdated) setFailure((current) => current ?? 'load'); });
-      return () => { outdated = true; };
-    }
-  }, [map, failure, entrance, reference, referenceLabel, entranceTitle]);
-
-  if (!key) return <Notice>{t('mapUnconfigured')}</Notice>;
-  const loading = !map && !failure;
-  return <>
-    <div className="relative min-w-0 overflow-hidden rounded-md border border-border bg-muted/40">
-      <div ref={canvas} role="region" aria-label={t('mapLabel')} inert={disabled || loading || !!failure} className="h-56 w-full sm:h-72" />
-      {loading || failure ? <div className="absolute inset-0 grid place-content-center gap-2 bg-muted/95 p-4 text-center">
-        <p role={failure ? 'alert' : 'status'} className="text-sm">{t(failure ? 'mapUnavailable' : 'mapLoading')}</p>
-        {failure === 'load' ? <Button type="button" variant="outline" size="sm" onClick={() => {
-          setMap(null);
-          setFailure(null);
-          retry((current) => current + 1);
-        }}>{t('retryMap')}</Button> : null}
-      </div> : null}
-    </div>
-    {!failure && !loading ? <p className="text-xs text-muted-foreground">{t('mapInstructions')}</p> : null}
-    {reference || entrance ? <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-      {reference ? <li><span aria-hidden="true" className="mr-1 text-foreground">●</span>{t('suggestionReference')} · {referenceLabel}</li> : null}
-      {entrance ? <li><span aria-hidden="true" className="mr-1 text-foreground">✓</span>{entranceTitle}</li> : null}
-    </ul> : null}
-  </>;
 }

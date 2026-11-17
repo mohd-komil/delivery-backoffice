@@ -136,7 +136,7 @@ void test('new repeated-hour bookings require an explicit occurrence and send th
       { value: '2026-10-25T01:30:00.000Z', text: 'Second occurrence · UTC+01:00' },
     ]);
     assert.equal(resolvedValue(form, 'startsAt'), '');
-    assert.equal(form.checkValidity(), false);
+    await act(async () => { assert.equal(form.checkValidity(), false); });
     await submit(form);
     assert.equal(api.calls.some((call) => call.method === 'POST'), false);
     await chooseOccurrence(occurrence, '2026-10-25T01:30:00.000Z');
@@ -162,7 +162,10 @@ void test('rescheduling prefills the stored repeated-hour occurrence and retains
   const { page, panel } = await openBooking(api);
   try {
     await click(button(panel, 'Manage assignment, reschedule or cancel ↓'));
-    const form = pickerForm(panel, 'Save new time');
+    const scheduling = panel.ownerDocument.querySelector('.visit-scheduling-dialog');
+    assert.ok(scheduling instanceof page.dom.window.HTMLElement);
+    assert.equal(scheduling.getAttribute('role'), 'dialog');
+    const form = pickerForm(scheduling, 'Save new time');
     const details = form.closest('details');
     assert.ok(details);
     await act(async () => { details.open = true; });

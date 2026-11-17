@@ -33,7 +33,7 @@ void test('the visit displays the saved customer confirmation and retains it in 
     await waitFor(() => document.querySelector('.panel-meta') !== null, 'delivery details');
     await click(button(document, 'Visits & tasks'));
 
-    const sections = document.querySelectorAll('.visit-card section[aria-label="Customer confirmation"]');
+    const sections = document.querySelectorAll('.visit-card [role="region"][aria-label="Customer confirmation"]');
     assert.equal(sections.length, 1, 'An unstaffed visit does not offer customer confirmation');
     const section = sections[0];
     assert.ok(section);
@@ -66,7 +66,7 @@ void test('the visit displays the saved customer confirmation and retains it in 
     await click(button(document, '↻ Refresh'));
     await waitFor(() => document.querySelectorAll('.visit-card').length === 1, 'cancelled visit removed from the working list');
     await click(button(document, 'History'));
-    const historical = document.querySelector('.detail-tab-history section[aria-label="Customer confirmation"]');
+    const historical = document.querySelector('.detail-tab-history [role="region"][aria-label="Customer confirmation"]');
     assert.ok(historical);
     assert.match(historical.textContent ?? '', /Customer confirmed.*Recorded by DEMO operator/s);
     assert.equal(historical.querySelector('button'), null);

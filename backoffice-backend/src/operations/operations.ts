@@ -1,23 +1,29 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 import { z } from 'zod';
 import { rows } from '../database/database';
 import { DeliveryStore } from './store';
 import { AssignInput, AvailabilitySchema, BookInput, CALENDAR_MAX_DAYS, CalendarQuerySchema, ChangeServiceInput, InstructionsInput, MoveInput, ParticipantCalendarProfileSchema, ParticipantCalendarSchema, ReasonInput, ResolveInput, ResponsibleParticipantInput, StaffingInput, TaskTemplateUpdateInput, TransportCancelInput, TransportCreateInput, TransportReplaceInput, VersionSchema, WorkReadinessInput, WorkScopeInput } from './contracts';
-import { AppointmentSchema, IdSchema, IssueSchema, NullableTextSchema, TaskTemplateSchema, TextSchema, ViewSchema, type Appointment, type Delivery, type OperatorActor, type Signature } from '../domain/model';
-import { assignedParticipant, changeServicePlan, completeDelivery, confirmCustomerVisit, deriveViews, DomainError, effectiveResults, hasRemainingLineWork, planVisitWork, raiseIssue, raiseReturnRequest, releaseDamagedWork, reopenDelivery, validateInterval, waiveChecklist } from '../domain/rules';
+import { AppointmentSchema, IdSchema, IssueSchema, NullableTextSchema, TaskTemplateSchema, TextSchema, ViewSchema, type Appointment, type Delivery, type OperatorActor, type PriorWorkRevision, type Signature } from '../domain/model';
+import { assignedParticipant, changeServicePlan, completeDelivery, confirmCustomerVisit, deriveViews, DomainError, effectiveResults, hasRemainingLineWork, planVisitWork, raiseIssue, raiseReturnRequest, releaseDamagedWork, reopenDelivery, reviewSignatureRefusal, validateInterval, waiveChecklist } from '../domain/rules';
 import { Files, validateFileContent } from '../evidence/files';
 import { distinctParticipants, Participants } from './participants';
 import { Skills, validateSkillSelection } from './skills';
 import { activeTransport, Vehicles } from './vehicles';
-import { deliveryPlanning, DeliveryListQuerySchema, geographyFacets, matchingGeographyFacets, selectDeliveryList } from './delivery-list';
+import { deliveryPlanning, DeliveryListQuerySchema, geographyFacets, matchingGeographyFacets, operationalGeographyFacets, selectDeliveryList } from './delivery-list';
 import { areaBounds } from './delivery-area';
 import { DeliveryPoints } from './delivery-points';
 import { deleteDirectoryEntry, type DeletableDirectory } from './directory-deletion';
-import { assertStandaloneAppointment } from './route-reservations';
+import { assertSignatureRefusalCorrectionPreservesCargo, assertStandaloneAppointment } from './route-reservations';
 import { assertPlanningReady, retainWorkServiceDefault } from './planning';
 import { instantiateAssignment } from './assignment-snapshot';
+import { ChangeWorkQuantitiesInput, ChangeWorkTimesInput, ConfirmPriorWorkInput, SignatureRefusalReviewInput } from './contracts';
+import { confirmPriorWork } from '../domain/rules';
+import { latestPriorWork } from '../domain/prior-work';
+import { changeRequiredWork, changeWorkTimes, lineServiceStatuses } from '../domain/rules';
+import { deliveryGeography } from '../domain/delivery-geography';
+import { calendarDestinationOptions, CalendarFilterCrewSchema, CalendarGeographyRowSchema } from './calendar-filters';
 
 const DataRow=z.object({data:z.unknown()});
 function calendarRange(input:unknown) {
@@ -47,21 +53,32 @@ function appointmentOverview(appointment: Appointment): Appointment {
     })),
   };
 }
+
+function requiredQuantities(delivery: Delivery, sourceLineId: number) {
+  const line = lineServiceStatuses(delivery).find((entry) => entry.sourceLineId === sourceLineId);
+  return line ? {
+    deliveryMilli: line.totalDeliveryMilli,
+    installationMilli: line.totalInstallationMilli,
+    collectionMilli: line.totalCollectionMilli,
+  } : null;
+}
 @Injectable()
 export class Operations {
   constructor(@Inject(DeliveryStore) readonly store:DeliveryStore,@Inject(Files) private readonly files:Files,@Inject(Participants) private readonly directory:Participants,@Inject(Skills) private readonly skillCatalogue:Skills,@Inject(Vehicles) private readonly transport:Vehicles,@Inject(DeliveryPoints) private readonly points:DeliveryPoints) {}
   async list(input:unknown) {
     const query=DeliveryListQuerySchema.parse(input);
-    const all=await this.store.all();
+    const operationalView = query.view !== undefined && query.view !== 'inbox';
+    const [all, crews] = await Promise.all([this.store.all(), operationalView && query.view !== 'planned' ? this.filterCrews() : []]);
     const counts=Object.fromEntries(ViewSchema.options.map((view)=>[view,all.filter((delivery)=>deriveViews(delivery).includes(view)).length]));
     const points=areaBounds(query)?await this.points.effectiveFor(all):undefined;
-    const {viewItems,filtered,area}=selectDeliveryList(all,query,points);
+    const {filtered,area,facetGeographies,filterFacets}=selectDeliveryList(all,query,points,crews);
+    const geographyCatalogue = operationalView ? all.map(deliveryGeography) : facetGeographies;
     const items = filtered.slice((query.page-1)*10, query.page*10).map(({delivery,geography}) => ({
       ...delivery, geography, planning:deliveryPlanning(delivery), appointments: delivery.appointments.map(appointmentOverview),
     }));
-    const geographies=viewItems.map(({geography})=>geography);
-    return {items,total:filtered.length,page:query.page,pageSize:10,counts,area,
-      geographyFacets:geographyFacets(geographies,query),matchingGeographyFacets:matchingGeographyFacets(geographies,query)};
+    return {items,total:filtered.length,page:query.page,pageSize:10,counts,area,filterFacets,
+      geographyFacets: operationalView ? operationalGeographyFacets(geographyCatalogue, facetGeographies, query) : geographyFacets(facetGeographies, query),
+      matchingGeographyFacets: matchingGeographyFacets(geographyCatalogue, query)};
   }
   async instructions(id:string,input:unknown,principal:OperatorActor) {
     const {version,...instructions}=InstructionsInput.parse(input);
@@ -72,6 +89,38 @@ export class Operations {
     const { version, ...change } = ChangeServiceInput.parse(input);
     await this.store.mutate(id, version, principal, { name: 'services.updated', details: () => change },
       (delivery) => changeServicePlan(delivery, change));
+    return this.store.detail(id);
+  }
+  async workTimes(id: string, input: unknown, principal: OperatorActor) {
+    const { version, ...change } = ChangeWorkTimesInput.parse(input);
+    await this.store.mutate(id, version, principal, { name: 'work_times.updated', details: (delivery) => ({
+      ...change, saved: delivery.servicePlan?.timeEstimates?.find(({ sourceLineId }) => sourceLineId === change.sourceLineId) ?? null,
+    }) }, (delivery) => changeWorkTimes(delivery, change, principal, new Date().toISOString()));
+    return this.store.detail(id);
+  }
+  async workQuantities(id: string, input: unknown, principal: OperatorActor) {
+    const { version, ...change } = ChangeWorkQuantitiesInput.parse(input);
+    let previous: ReturnType<typeof requiredQuantities> = null;
+    await this.store.mutate(id, version, principal, { name: 'work_quantities.updated', details: (delivery) => ({
+      sourceLineId: change.sourceLineId, reason: change.reason, previous, current: requiredQuantities(delivery, change.sourceLineId),
+      sourceItem: delivery.source.items.find(({ sourceLineId }) => sourceLineId === change.sourceLineId) ?? null,
+    }) }, (delivery) => {
+      const updated = changeRequiredWork(delivery, change, principal, new Date().toISOString());
+      previous = requiredQuantities(delivery, change.sourceLineId);
+      return updated;
+    });
+    return this.store.detail(id);
+  }
+  async priorWork(id: string, input: unknown, principal: OperatorActor) {
+    const command = ConfirmPriorWorkInput.parse(input);
+    const { version, ...change } = command;
+    let previous: PriorWorkRevision | null = null;
+    await this.store.mutate(id, version, principal, { name: 'prior_work.confirmed', details: (delivery) => ({
+      previous, current: latestPriorWork(delivery).get(command.sourceLineId) ?? null,
+    }) }, (delivery) => {
+      previous = latestPriorWork(delivery).get(command.sourceLineId) ?? null;
+      return confirmPriorWork(delivery, change, principal, new Date().toISOString());
+    }, { id: command.requestId, input: { ...command, actorId: principal.id } });
     return this.store.detail(id);
   }
   private ready(delivery:Delivery) {
@@ -125,8 +174,10 @@ export class Operations {
   async saveParticipant(id:string|null,input:unknown,principal:OperatorActor) {return this.directory.save(id,input,principal);}
   async saveParticipantSkills(id:string,input:unknown,principal:OperatorActor) {return this.directory.saveSkills(id,input,principal);}
   async skills() {return this.skillCatalogue.list();}
+  async skill(id:string) {return this.skillCatalogue.get(id);}
   async saveSkill(id:string|null,input:unknown,principal:OperatorActor) {return this.skillCatalogue.save(id,input,principal);}
   async vehicles() {return this.transport.list();}
+  async vehicle(id:string) {return this.transport.get(id);}
   async saveVehicle(id:string|null,input:unknown,principal:OperatorActor) {return this.transport.save(id,input,principal);}
   async transportAvailability(id:string,appointmentId:string,input:unknown) {
     return this.transport.availability(visit(await this.store.get(id),appointmentId),input);
@@ -438,9 +489,27 @@ export class Operations {
     await this.store.mutate(id,command.version,principal,'checklist.waived',(delivery)=>waiveChecklist(delivery,appointmentId,checklistId,principal,command.reason,new Date().toISOString()));
     return this.store.detail(id);
   }
+  async reviewSignatureRefusal(id: string, appointmentId: string, resultId: string, input: unknown, principal: OperatorActor) {
+    const { version, requestId, ...decision } = SignatureRefusalReviewInput.parse(input);
+    const details = { appointmentId, resultId, ...decision };
+    await this.store.mutate(id, version, principal, { name: 'execution.signature_refusal_reviewed', details: () => details },
+      async (delivery, manager) => {
+        const next = reviewSignatureRefusal(delivery, appointmentId, resultId, decision, principal, new Date().toISOString());
+        if (decision.decision === 'corrected') {
+          const original = visit(delivery, appointmentId).results.find(({ id }) => id === resultId);
+          if (!original) throw new Error('Validated signature refusal report is unavailable');
+          await assertSignatureRefusalCorrectionPreservesCargo(manager, appointmentId, original.quantities, decision.quantities);
+        }
+        return next;
+      },
+      { id: requestId, input: { ...details, actorId: principal.id } });
+    return this.store.detail(id);
+  }
   async complete(id:string,input:unknown,principal:OperatorActor) {
     const command=VersionSchema.strict().parse(input);
-    await this.store.mutate(id,command.version,principal,'delivery.completed',async(delivery)=>{
+    await this.store.mutate(id,command.version,principal,{name:'delivery.completed',details:(delivery)=>({
+      priorWorkSnapshot:delivery.completions.at(-1)?.priorWorkSnapshot??[],
+    })},async(delivery)=>{
       for(const result of effectiveResults(delivery)){
         for(const evidence of result.evidence){
           try{
@@ -458,12 +527,24 @@ export class Operations {
     await this.store.mutate(id,command.version,principal,'delivery.reopened',(delivery)=>reopenDelivery(delivery,principal,command.reason,new Date().toISOString()));
     return this.store.detail(id);
   }
+  async calendarFilterOptions(input: unknown) {
+    z.object({}).strict().parse(input);
+    const [deliveries, crews] = await Promise.all([
+      rows(this.store.db.source.manager, CalendarGeographyRowSchema,
+        `SELECT jsonb_build_object('customer',data->'source'->'customer') AS source,data->'addressGeography' AS "addressGeography" FROM delivery ORDER BY source_id,id`),
+      this.filterCrews(),
+    ]);
+    return { destinations: calendarDestinationOptions(deliveries.map((delivery) => ({ ...delivery, addressGeography: delivery.addressGeography ?? undefined }))), crews };
+  }
+  private filterCrews() {
+    return rows(this.store.db.source.manager, CalendarFilterCrewSchema, 'SELECT id,name,enabled FROM crew ORDER BY lower(name),id');
+  }
   async calendar(input:unknown) {
     const query=calendarRange(input);
     return (await this.store.all()).flatMap((delivery) => delivery.appointments
       .filter((appointment) => Date.parse(appointment.startsAt) < Date.parse(query.to) && Date.parse(appointment.endsAt) > Date.parse(query.from))
       .map((appointment) => ({ deliveryId: delivery.id, pickingName: delivery.source.pickingName,
-        customerName: delivery.source.customer.name, appointment: appointmentOverview(appointment) })));
+        customerName: delivery.source.customer.name, geography: deliveryGeography(delivery), appointment: appointmentOverview(appointment) })));
   }
   async participantCalendar(id:string,input:unknown) {
     const query=calendarRange(input);
@@ -494,7 +575,6 @@ export class Operations {
     return this.directory.saveCrew(id,input,principal);
   }
   async saveTemplate(id:string|null,input:unknown,principal:OperatorActor) {
-    if(principal.role!=='admin') throw new ForbiddenException('Administrator permission required');
     const templateId=id?IdSchema.parse(id).toLowerCase():randomUUID();
     const update=id?TaskTemplateUpdateInput.parse(input):null;
     if(update?.id&&update.id.toLowerCase()!==templateId) throw new BadRequestException('Template body ID must match its route ID');

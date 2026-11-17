@@ -1,10 +1,10 @@
 import { request } from '@/shared/api/client';
 import { visitDetailSchema } from '@/shared/api/contracts';
+import type { FinishEvidence } from '../model/finish-evidence';
 import type { IncompleteWork } from '../model/incomplete-work';
 import type { ItemCheck } from '../model/item-check';
 import type { PhotoPayload } from '../model/photo';
 import type { FinishLineQuantity } from '../model/quantity';
-import type { SignatureStrokes } from '../model/signature';
 
 export const issueTypes = ['damage', 'missing_parts', 'access', 'other'] as const;
 export type IssueType = typeof issueTypes[number];
@@ -23,9 +23,7 @@ export type FinishResult = {
   incompleteWork: IncompleteWork[];
   actualStart?: string;
   photos: (PhotoPayload & { sourceLineId?: number })[];
-  customerSignature: { signerName: string; strokes: SignatureStrokes };
-  crewSignature: { strokes: SignatureStrokes };
-};
+} & FinishEvidence;
 
 function command(visitId: string, path: string, method: 'POST' | 'PATCH', body: VersionedRequest) {
   return request(`/visits/${encodeURIComponent(visitId)}${path}`, visitDetailSchema, {

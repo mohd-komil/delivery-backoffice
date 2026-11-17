@@ -12,7 +12,7 @@ import { assertPlanningReady, retainWorkServiceDefault } from '../operations/pla
 import { Skills } from '../operations/skills';
 import { DeliveryStore } from '../operations/store';
 import { activeTransport, Vehicles } from '../operations/vehicles';
-import { RouteDraftInputSchema, type RouteDraftInput } from './contracts';
+import { RouteDraftInputSchema, withoutRouteDriver, type RouteDraftInput } from './contracts';
 import { PublicationReviewInputSchema, PublicationReviewSchema, PublicationSnapshotSchema, PublicationStatusSchema, PublicationSummarySchema, PublishInputSchema, type PublicationReviewInput } from './publication-contracts';
 import { routeJob, RouteDrafts } from './service';
 
@@ -116,12 +116,9 @@ export class RoutePublication {
       const reserveTo = timeline.returnAt;
       const planning = prepared.draft.data.planning;
       const vehicleId = prepared.draft.data.vehicleId;
-      if (!reserveTo || !planning || planning.transferBufferMinutes === null || !vehicleId || planning.driver.kind === 'unknown') {
-        throw new DomainError('ROUTE_FEASIBILITY_INCOMPLETE', 'A complete trip, vehicle, driver and transfer buffer are required');
+      if (!reserveTo || !planning || planning.transferBufferMinutes === null || !vehicleId) {
+        throw new DomainError('ROUTE_FEASIBILITY_INCOMPLETE', 'A complete trip, vehicle and transfer buffer are required');
       }
-      const driver = planning.driver.kind === 'participant'
-        ? { kind: 'participant' as const, participantId: planning.driver.participantId }
-        : { kind: 'external' as const, name: planning.driver.name, phone: reviewed.externalDriverPhone ?? '' };
       const publishedAt = new Date().toISOString();
       for (const stop of prepared.stops) {
         if (stop.selection.mode === 'create') {
@@ -130,12 +127,16 @@ export class RoutePublication {
           const request = stop.delivery.returnRequests.find(({ id: returnId }) => returnId === stop.appointment.returnRequestId);
           if (request) { request.status = 'planned'; request.appointmentId = stop.appointment.id; }
         }
-        if (activeTransport(stop.appointment).length === 0) {
-          await this.vehicles.add(manager, stop.appointment, [{ vehicleId, reserveFrom: timeline.departAt, reserveTo, driver }], actor);
+        const [allocation] = activeTransport(stop.appointment);
+        if (allocation && allocation.driver.kind !== 'none') {
+          this.vehicles.retire(stop.appointment, allocation.id, 'replaced', 'Attached to a route using a shared vehicle reservation', actor);
+        }
+        if (!allocation || allocation.driver.kind !== 'none') {
+          await this.vehicles.add(manager, stop.appointment, [{ vehicleId, reserveFrom: timeline.departAt, reserveTo, driver: { kind: 'none' } }], actor, allocation?.id);
         }
       }
       const snapshot = PublicationSnapshotSchema.parse({
-        draft: prepared.draft.data, command: reviewed, review: prepared.review,
+        draft: prepared.draft.data, command: { version: reviewed.version, stops: reviewed.stops }, review: prepared.review,
         publishedBy: { id: actor.id, name: actor.name }, publishedAt, estimateAcknowledged: true,
         appointments: prepared.stops.map(({ delivery, appointment }) => ({ deliveryId: delivery.id, appointment })),
       });
@@ -172,8 +173,9 @@ export class RoutePublication {
   }
 
   private async prepare(manager: EntityManager, id: string, command: PublicationReviewInput, actor: OperatorActor) {
-    const [draft] = await rows(manager, DraftRowSchema, 'SELECT id,version,data,updated_at AS "updatedAt" FROM route_draft WHERE id=$1', [id]);
-    if (!draft) throw new NotFoundException('Route draft not found');
+    const [stored] = await rows(manager, DraftRowSchema, 'SELECT id,version,data,updated_at AS "updatedAt" FROM route_draft WHERE id=$1', [id]);
+    if (!stored) throw new NotFoundException('Route draft not found');
+    const draft = { ...stored, data: withoutRouteDriver(stored.data) };
     if (draft.version !== command.version) throw new DomainError('ROUTE_DRAFT_CHANGED', 'The saved route changed. Reload and review publication again.');
     if (await this.find(manager, id)) throw new DomainError('ROUTE_ALREADY_PUBLISHED', 'This draft has already been published');
     if (draft.data.stops.length !== command.stops.length || draft.data.stops.some((stop, index) => stop.deliveryId !== command.stops[index]?.deliveryId)) {
@@ -182,9 +184,6 @@ export class RoutePublication {
     const planning = draft.data.planning;
     if (!draft.data.crewId || !planning || planning.participantIds.length === 0) {
       throw new DomainError('ROUTE_FEASIBILITY_INCOMPLETE', 'Select the crew and actual participants before publication review');
-    }
-    if (planning.driver.kind === 'external' && !command.externalDriverPhone) {
-      throw new DomainError('ROUTE_FEASIBILITY_INCOMPLETE', 'Enter a contact phone for the external driver');
     }
     const deliveries = await this.store.getMany(command.stops.map(({ deliveryId }) => deliveryId), manager);
     deliveries.sort((a, b) => a.id.localeCompare(b.id));
@@ -275,7 +274,8 @@ export class RoutePublication {
       }),
       templates: templateSnapshots, pointContexts: calculated.preview.pointContexts });
     const review = PublicationReviewSchema.parse({ routeId: id, draftVersion: draft.version, fingerprint,
-      publicationEnabled: this.capability().enabled, timeline, feasibility, stops: reviewStops });
+      publicationEnabled: this.capability().enabled, timeline, feasibility, locations: calculated.preview.locations,
+      calendar: calculated.preview.calendar, stops: reviewStops });
     return { draft, stops, review };
   }
 

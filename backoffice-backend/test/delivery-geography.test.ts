@@ -10,10 +10,11 @@ import { AppModule, configureApplication } from '../src/app';
 import { applicationUrl, config } from '../src/config';
 import { applicationMigrations, Database, makeDataSource, rows } from '../src/database/database';
 import { destinationAddressKey } from '../src/domain/destination-address';
-import { deliveryGeography } from '../src/domain/delivery-geography';
+import { deliveryGeography, DeliveryGeographySchema } from '../src/domain/delivery-geography';
 import { createDelivery, DeliverySchema, type Delivery } from '../src/domain/model';
 import { hashPassword } from '../src/identity/identity';
 import { DeliveryListSchema } from '../src/operations/delivery-list';
+import { calendarDestinationOptions, CalendarFilterOptionsSchema } from '../src/operations/calendar-filters';
 
 class GeographyDatabase extends Database {
   override readonly source: DataSource;
@@ -61,6 +62,16 @@ void test('resolved geography is address/customer-bound and never invents source
   assert.equal(DeliverySchema.safeParse({ ...delivery, addressGeography: { ...delivery.addressGeography, postalCode: 95121 } }).success, false);
 });
 
+void test('global calendar destinations group case-insensitive trimmed triplets without discarding completed or unbooked deliveries', () => {
+  const first = fixture(1);
+  const second = fixture(2);
+  second.completedAt = '2031-05-01T10:00:00Z';
+  assert.deepEqual(calendarDestinationOptions([first, second, fixture(19)]), [
+    { city: 'Catania', province: 'CT', postalCode: '95121', count: 2 },
+    { city: 'Messina', province: null, postalCode: null, count: 1 },
+  ]);
+});
+
 void test('geographic Inbox filters run before pagination with cascading facets and unchanged global counts', async (context) => {
   const schema = `geography_http_${randomUUID().replaceAll('-', '')}`;
   assert.match(schema, /^geography_http_[0-9a-f]{32}$/);
@@ -72,6 +83,10 @@ void test('geographic Inbox filters run before pagination with cascading facets 
   let base = '';
   let cookie = '';
   const before = Array.from({ length: 21 }, (_, index) => fixture(index + 1));
+  const unusedCrews = [
+    { id: randomUUID(), name: 'DEMO calendar active unused', enabled: true },
+    { id: randomUUID(), name: 'DEMO calendar disabled unused', enabled: false },
+  ];
 
   async function request(route: string, expected = 200, session = cookie) {
     const reply = await fetch(base + '/api' + route, { headers: { Origin: config().FRONTEND_ORIGIN, Cookie: session } });
@@ -94,6 +109,8 @@ void test('geographic Inbox filters run before pagination with cascading facets 
     for (const delivery of before) await db.source.query(
       'INSERT INTO delivery(id,source_instance,source_id,version,data) VALUES($1,$2,$3,$4,$5::jsonb)',
       [delivery.id, schema, delivery.source.pickingId, delivery.version, JSON.stringify(delivery)]);
+    for (const crew of unusedCrews) await db.source.query(
+      "INSERT INTO crew(id,version,name,classification,area,enabled) VALUES($1,1,$2,'indoor','DEMO',$3)", [crew.id, crew.name, crew.enabled]);
     await db.source.query('INSERT INTO app_user(id,email,name,role,password_hash) VALUES($1,$2,$3,$4,$5)',
       [randomUUID(), 'geography-operator@example.test', 'DEMO Geography Operator', 'operator', await hashPassword(password)]);
     await db.source.destroy();
@@ -111,6 +128,26 @@ void test('geographic Inbox filters run before pagination with cascading facets 
     cookie = session;
 
     const baseline = await list();
+    await context.test('calendar filter options cover all delivery pages and unused crews even for an empty calendar month', async () => {
+      const emptyCalendar = await request('/calendar?from=2026-11-01T00%3A00%3A00Z&to=2026-12-01T00%3A00%3A00Z');
+      assert.deepEqual(emptyCalendar, []);
+      const options = CalendarFilterOptionsSchema.parse(await request('/calendar/filter-options'));
+      assert.equal(options.destinations.reduce((total, entry) => total + entry.count, 0), 21);
+      assert.deepEqual(options.destinations.find(({ city, postalCode }) => city === 'Catania' && postalCode === '95121'),
+        { city: 'Catania', province: 'CT', postalCode: '95121', count: 6 });
+      assert.deepEqual(options.destinations.find(({ city }) => city === 'Ragusa'), { city: 'Ragusa', province: 'RG', postalCode: '00010', count: 1 });
+      assert.deepEqual(options.destinations.find(({ city }) => city === 'Milano'), { city: 'Milano', province: 'MI', postalCode: '00100', count: 1 });
+      assert.deepEqual(options.destinations.find(({ city }) => city === null), { city: null, province: null, postalCode: null, count: 1 });
+      assert.deepEqual(options.crews, unusedCrews);
+      await request('/calendar/filter-options', 401, '');
+      await request('/calendar/filter-options?from=2026-11-01T00%3A00%3A00Z', 400);
+    });
+    await context.test('calendar exposes resolved geography through the same authenticated read path', async () => {
+      const query = new URLSearchParams({ from: '2031-05-01T00:00:00Z', to: '2031-05-02T00:00:00Z' });
+      const calendar = z.array(z.object({ pickingName: z.string(), geography: DeliveryGeographySchema })).parse(await request(`/calendar?${query}`));
+      assert.deepEqual(calendar, [{ pickingName: 'GEOGRAPHY/JOB17', geography: { city: 'Milano', province: 'MI', postalCode: '00100', source: 'synthetic_fixture' } }]);
+      await request(`/calendar?${query}`, 401, '');
+    });
     await context.test('cities span the entire Inbox while unavailable cities produce empty child options', async () => {
       assert.equal(baseline.total, 20);
       assert.equal(baseline.items.length, 10);
@@ -219,9 +256,16 @@ void test('geographic Inbox filters run before pagination with cascading facets 
         cities: [{ value: 'Catania', count: 6 }], provinces: [{ value: 'CT', count: 6 }], postalCodes: [{ value: '95121', count: 6 }],
       });
       const planned = DeliveryListSchema.parse(await request('/deliveries?view=planned'));
-      assert.deepEqual(planned.matchingGeographyFacets, {
+      assert.equal(planned.total, 1);
+      assert.ok(planned.geographyFacets.cities.some(({ value, count }) => value === 'Catania' && count === 0));
+      assert.ok(planned.geographyFacets.cities.some(({ value, count }) => value === 'Milano' && count === 1));
+      const plannedByProvince = DeliveryListSchema.parse(await request('/deliveries?view=planned&province=MI'));
+      assert.deepEqual(plannedByProvince.matchingGeographyFacets, {
         cities: [{ value: 'Milano', count: 1 }], provinces: [{ value: 'MI', count: 1 }], postalCodes: [{ value: '00100', count: 1 }],
       });
+      const noPlannedInCatania = DeliveryListSchema.parse(await request('/deliveries?view=planned&province=CT'));
+      assert.equal(noPlannedInCatania.total, 0);
+      assert.deepEqual(noPlannedInCatania.matchingGeographyFacets, provinceMatches);
     });
 
     await context.test('matching facets preserve ambiguous CAP, missing values, leading zeros and impossible intersections', async () => {
@@ -262,6 +306,7 @@ void test('geographic Inbox filters run before pagination with cascading facets 
         .parse(await request('/openapi.json'));
       const names = document.paths['/deliveries']?.get?.parameters.map(({ name }) => name);
       for (const name of ['city', 'province', 'postalCode', 'cityMissing', 'provinceMissing', 'postalCodeMissing']) assert.ok(names?.includes(name));
+      assert.deepEqual(document.paths['/calendar/filter-options']?.get?.parameters, []);
       const after = await rows(db.source.manager, z.object({ data: DeliverySchema }), 'SELECT data FROM delivery ORDER BY source_id');
       assert.deepEqual(after.map(({ data }) => data), before, 'Filtering never writes delivery/source/planning/history data');
     });

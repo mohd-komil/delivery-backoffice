@@ -171,12 +171,14 @@ void test('refresh retains the mounted grid, focused date, selected mode, cancel
     const input = dateInput(page); const scroll = document.querySelector('.calendar-scroll'); const grid = document.querySelector('.calendar-grid');
     const event = document.querySelector('.calendar-event'); const visit = document.querySelector(`.participant-visits article[data-appointment-id="${appointmentId}"]`);
     assert.ok(scroll instanceof page.dom.window.HTMLElement); assert.ok(grid); assert.ok(event); assert.ok(visit);
-    scroll.scrollTop = 721; input.focus();
+    const dateTrigger = input.parentElement?.querySelector('button[role="combobox"]');
+    assert.ok(dateTrigger instanceof page.dom.window.HTMLButtonElement);
+    scroll.scrollTop = 721; dateTrigger.focus();
     const pending = api.defer(calendarPath); await click(button(document, '↻ Refresh calendar'));
     function assertPreserved(scroll: HTMLElement, toggle: HTMLInputElement) {
       assert.equal(document.querySelector('.calendar-scroll'), scroll); assert.equal(document.querySelector('.calendar-grid'), grid); assert.equal(document.querySelector('.calendar-event'), event);
       assert.equal(document.querySelector(`.participant-visits article[data-appointment-id="${appointmentId}"]`), visit);
-      assert.equal(dateInput(page), input); assert.equal(input.value, '2026-11-03'); assert.equal(document.activeElement, input);
+      assert.ok(dateInput(page) === input, 'The date value bridge remains mounted'); assert.equal(input.value, '2026-11-03'); assert.ok(document.activeElement === dateTrigger, 'The visible date picker retains focus');
       assert.equal(scroll.scrollTop, 721); assert.equal(toggle.checked, true); assert.equal(button(document, 'Day').classList.contains('active'), true);
     }
     assertPreserved(scroll, toggle);

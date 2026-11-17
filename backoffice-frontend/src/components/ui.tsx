@@ -27,7 +27,7 @@ export function ChoiceGroup({ label, children }: { label: string; children: Reac
   return <fieldset className="field"><legend>{label}</legend>{children}</fieldset>;
 }
 
-export function ActionForm({ onSubmit, children, submitLabel, successMessage, secondary = false, disabled = false, submitDisabled = false, dataVersion, onResetDraft }: {
+export function ActionForm({ onSubmit, children, submitLabel, successMessage, secondary = false, disabled = false, submitDisabled = false, dataVersion, onResetDraft, followLatestWhenUntouched = false }: {
   onSubmit: (data: FormData) => Promise<void | number>;
   children: ReactNode;
   submitLabel: string;
@@ -37,15 +37,23 @@ export function ActionForm({ onSubmit, children, submitLabel, successMessage, se
   submitDisabled?: boolean;
   dataVersion?: number;
   onResetDraft?: () => void;
+  /** Safe for drafts captured by field change events. */
+  followLatestWhenUntouched?: boolean;
 }) {
   const t = useTranslations('common');
   const locale = useLocale();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{ kind: 'stale' } | { kind: 'submission'; failure: unknown } | null>(null);
-  const [draftVersion, setDraftVersion] = useState(dataVersion);
+  const [draftVersion, setDraftVersion] = useState(followLatestWhenUntouched ? undefined : dataVersion);
   const [resetCount, setResetCount] = useState(0);
   const submitting = useRef(false);
-  const stale = dataVersion !== undefined && draftVersion !== dataVersion;
+  const formVersion = followLatestWhenUntouched ? draftVersion ?? dataVersion : draftVersion;
+  const stale = dataVersion !== undefined && formVersion !== dataVersion;
+
+  function retainDraftVersion() {
+    setDraftVersion((version) => version ?? dataVersion);
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting.current) return;
@@ -56,7 +64,8 @@ export function ActionForm({ onSubmit, children, submitLabel, successMessage, se
     setSaving(true); setError(null);
     try {
       const savedVersion = await onSubmit(data);
-      if (typeof savedVersion === 'number') setDraftVersion(savedVersion);
+      if (followLatestWhenUntouched) setDraftVersion(undefined);
+      else if (typeof savedVersion === 'number') setDraftVersion(savedVersion);
       toast.success(successMessage ?? t('saved'));
     } catch (failure) {
       if (failure instanceof TypeError || (failure instanceof ApiError && ![400, 401, 409, 422].includes(failure.status))) {
@@ -70,8 +79,9 @@ export function ActionForm({ onSubmit, children, submitLabel, successMessage, se
     }
   }
   return <form onSubmit={(event) => { void submit(event); }} className="action-form">
-    <fieldset key={resetCount} disabled={saving || disabled}>{children}</fieldset>
-    {stale ? <Notice>{t('newerRecord')} <Button type="button" variant="outline" disabled={saving} onClick={() => { if (submitting.current) return; onResetDraft?.(); setDraftVersion(dataVersion); setResetCount((value) => value + 1); setError(null); }}>{t('latestData')}</Button></Notice> : null}
+    <fieldset key={followLatestWhenUntouched ? `${resetCount}:${formVersion}` : resetCount} disabled={saving || disabled}
+      onChangeCapture={followLatestWhenUntouched ? retainDraftVersion : undefined}>{children}</fieldset>
+    {stale ? <Notice>{t('newerRecord')} <Button type="button" variant="outline" disabled={saving} onClick={() => { if (submitting.current) return; onResetDraft?.(); setDraftVersion(followLatestWhenUntouched ? undefined : dataVersion); setResetCount((value) => value + 1); setError(null); }}>{t('latestData')}</Button></Notice> : null}
     {error ? <Notice tone="error">{error.kind === 'stale' ? t('changedBeforeSave') : errorMessage(error.failure, locale)}</Notice> : null}
     <div className="form-actions"><Button variant={secondary ? 'outline' : 'default'} disabled={saving || disabled || submitDisabled} type="submit">{saving ? t('saving') : submitLabel}</Button></div>
   </form>;

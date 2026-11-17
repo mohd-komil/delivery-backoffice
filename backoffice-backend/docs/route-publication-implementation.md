@@ -4,6 +4,8 @@
 
 ## Scope and rollout
 
+Route planning and publication reserve the selected vehicle and actual crew. The responsible participant records departure and return. Attaching a legacy booking with a driver allocation records the replacement in transport history and uses the same vehicle for the route. Cancelling the route can restore that standalone allocation. Previously published routes retain their original driver permissions and snapshots until explicitly amended.
+
 The backend implements publication review and atomic Publish. Backoffice has a separate review form below the saved route draft. Publication reserves exact work through visits and the complete trip through one route-owned resource ledger. It does not confirm customers, start trips, submit Crew reports or close deliveries.
 
 `ROUTE_PUBLICATION_ENABLED=false` is the default. Read-only review is available; the server also rejects Publish while disabled. Keep the shared demo disabled until tasks 07–09 provide departure, cancellation and actual-return controls. The isolated browser demonstration enables publication only against a fresh, owned schema in `delivery_backoffice_test`.
@@ -17,7 +19,7 @@ All endpoints use existing Backoffice authentication and mutation Origin checks.
 | Endpoint | Meaning |
 | --- | --- |
 | `GET /api/routes/publication-capability` | `{ enabled, reason }`; the default gate is closed. |
-| `POST /api/routes/:id/publication-review` | Saved `version`, ordered exact `stops`, optional `externalDriverPhone`. Returns timeline, feasibility, exact visits/work/tasks/responsibility, confirmation state and review fingerprint without writing. |
+| `POST /api/routes/:id/publication-review` | Saved `version` and ordered exact `stops`. Returns timeline, feasibility, exact visits/work/tasks/responsibility, confirmation state and review fingerprint without writing. |
 | `POST /api/routes/:id/publish` | Same selection plus `requestId`, `fingerprint`, `acknowledgeEstimates`. HTTP 200 on success/replay. All participating records commit or roll back together. |
 | `GET /api/routes/:id/publication` | Publication summary and immutable publication-time `review`, or null. Its confirmation statuses describe the saved moment, not later live confirmations. |
 

@@ -1,10 +1,49 @@
+import { readFileSync } from 'node:fs';
 import { DataSource, type QueryRunner } from 'typeorm';
 import { z } from 'zod';
 import { config } from '../config';
-import { rows } from '../database/database';
+import { rows, type Executor } from '../database/database';
 import { SourceSchema, type SourceSnapshot } from '../domain/model';
+import { Odoo18Snapshot } from './odoo18-snapshot';
+import { SourceEvidenceReader, type SourceRead } from './source-evidence';
 
+/** Historical synthetic source identity, retained for existing fixtures and snapshots. */
 export const SOURCE_INSTANCE = 'odoo_mock';
+export function sourceInstance(): string { return config().ODOO_SOURCE_INSTANCE; }
+
+export interface SourceReader {
+  qualifyingIds(): Promise<number[]>;
+  picking(id: number): Promise<SourceSnapshot | null>;
+  readPicking(id: number): Promise<SourceRead>;
+}
+
+/** Verify effective privileges; PostgreSQL read-only transactions remain a separate enforced boundary. */
+export async function assertReadOnlyOdooRole(executor: Executor): Promise<void> {
+  const permissionRows = await rows(executor, z.object({
+    elevatedRole: z.boolean(), canCreateDatabaseObjects: z.boolean(), canCreatePublicObjects: z.boolean(),
+    writableTables: z.boolean(), defaultReadOnly: z.boolean(), transactionReadOnly: z.boolean(),
+  }), `
+    SELECT (r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication OR r.rolbypassrls) AS "elevatedRole",
+      has_database_privilege(current_user,current_database(),'CREATE') AS "canCreateDatabaseObjects",
+      has_schema_privilege(current_user,'public','CREATE') AS "canCreatePublicObjects",
+      EXISTS (
+        SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname='public' AND c.relkind IN ('r','p')
+          AND (has_table_privilege(current_user,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE')
+            OR has_any_column_privilege(current_user,c.oid,'INSERT,UPDATE'))
+      ) AS "writableTables",
+      current_setting('default_transaction_read_only')::boolean AS "defaultReadOnly",
+      current_setting('transaction_read_only')::boolean AS "transactionReadOnly"
+    FROM pg_catalog.pg_roles r WHERE r.rolname=current_user`);
+  const permission = permissionRows[0];
+  if (permissionRows.length !== 1 || !permission || permission.elevatedRole || permission.canCreateDatabaseObjects
+    || permission.canCreatePublicObjects || permission.writableTables) {
+    throw new Error('Odoo source reader has unapproved write or administrative privileges');
+  }
+  if (!permission.defaultReadOnly || !permission.transactionReadOnly) {
+    throw new Error('Odoo source requires a read-only connection and transaction');
+  }
+}
 const PAGE_SIZE = 100;
 const MAX_PICKINGS = 5000;
 const IdRow = z.object({ id: z.number().int().positive() });
@@ -27,22 +66,35 @@ const MoveRow = z.object({
   notes: NullableString, photoUrl: NullableString,
 });
 
-/** Read-only teaching adapter. It makes no customer-schema compatibility claim. */
+/** Source access always stays read-only; explicit configuration selects the isolated mock or Odoo 18 mapping. */
 export class OdooSource {
   private readonly dataSource: DataSource;
+  private readonly mode: 'mock' | 'odoo18';
   constructor() {
-    const url = config().ODOO_DATABASE_URL;
+    const environment = config();
+    const url = environment.ODOO_DATABASE_URL;
     const parsed = new URL(url);
-    if (parsed.pathname !== '/odoo_mock' || parsed.username !== 'odoo_reader') {
+    this.mode = environment.ODOO_SOURCE_MODE;
+    if (this.mode === 'mock' && (parsed.pathname !== '/odoo_mock' || parsed.username !== 'odoo_reader')) {
       throw new Error('The source adapter requires the isolated odoo_mock reader');
     }
+    const realSourceOptions = this.mode === 'odoo18' ? {
+      ssl: environment.ODOO_SOURCE_TRANSPORT === 'tls' ? {
+        rejectUnauthorized: true,
+        ...(environment.ODOO_SOURCE_CA_FILE === undefined ? {} : { ca: readFileSync(environment.ODOO_SOURCE_CA_FILE, 'utf8') }),
+      } : false,
+      // Startup options apply before the ORM's metadata reads. Source URL options are forbidden by config.
+      extra: { connectionTimeoutMillis: 5000, statement_timeout: 15000, max: 2,
+        options: '-c default_transaction_read_only=on -c search_path=public -c lock_timeout=2000 -c idle_in_transaction_session_timeout=30000' },
+    } : {};
     this.dataSource = new DataSource({
       type: 'postgres', url, entities: [], synchronize: false, logging: false,
       extra: { connectionTimeoutMillis: 3000, statement_timeout: 15000, max: 2 },
+      ...realSourceOptions,
     });
   }
 
-  async snapshot<T>(read: (source: OdooSnapshot) => Promise<T>): Promise<T> {
+  async snapshot<T>(read: (source: SourceReader) => Promise<T>): Promise<T> {
     let runner: QueryRunner | undefined;
     try {
       await this.dataSource.initialize();
@@ -50,7 +102,9 @@ export class OdooSource {
       await runner.connect();
       await runner.startTransaction('REPEATABLE READ');
       await runner.query('SET TRANSACTION READ ONLY');
-      const result = await read(new OdooSnapshot(runner));
+      await runner.query("SET LOCAL TIME ZONE 'UTC'");
+      if (this.mode === 'odoo18') await assertReadOnlyOdooRole(runner.manager);
+      const result = await read(this.mode === 'odoo18' ? new Odoo18Snapshot(runner.manager) : new OdooSnapshot(runner));
       await runner.commitTransaction();
       return result;
     } catch (error) {
@@ -64,7 +118,13 @@ export class OdooSource {
 }
 
 export class OdooSnapshot {
-  constructor(private readonly runner: QueryRunner) {}
+  private readonly evidenceReader: SourceEvidenceReader;
+  constructor(private readonly runner: QueryRunner) { this.evidenceReader = new SourceEvidenceReader(runner.manager, 'mock'); }
+
+  async readPicking(id: number): Promise<SourceRead> {
+    const source = await this.picking(id);
+    return { source, evidence: await this.evidenceReader.read(id, source) };
+  }
 
   async qualifyingIds(): Promise<number[]> {
     const ids: number[] = [];

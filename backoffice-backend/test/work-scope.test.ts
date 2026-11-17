@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { createDelivery, DeliverySchema, IncompleteWorkSchema, mappedSourceService, type Appointment, type Delivery, type ExecutionInput, type OperatorActor, type WorkLineInput } from '../src/domain/model';
-import { appointmentScopeReviewReason, changeServicePlan, closureBlockers, DomainError, lineServiceStatuses, planVisitWork, raiseIssue, recordExecution, releaseDamagedWork, startVisit } from '../src/domain/rules';
+import { appointmentScopeReviewReason, changeRequiredWork, changeServicePlan, changeWorkTimes, closureBlockers, DomainError, lineServiceStatuses, lineWorkTimes, planVisitWork, raiseIssue, recordExecution, releaseDamagedWork, remainingWorkEstimate, startVisit } from '../src/domain/rules';
+import { acceptSourceSnapshot, requiredWorkSourceConflicts } from '../src/domain/source-import';
 
 const operator: OperatorActor = { id: randomUUID(), name: 'DEMO Planner', role: 'operator' };
 const actor = { kind: 'crew' as const, id: randomUUID(), name: 'DEMO Responsible' };
@@ -48,6 +49,48 @@ function status(delivery: Delivery, id = 11) {
 }
 
 function fails(code: string) { return (error: unknown) => error instanceof DomainError && error.code === code; }
+
+void test('a local quantity exception stays with its order line, scales the estimate and survives a compatible source refresh', () => {
+  const initial = fixture();
+  assert.equal(remainingWorkEstimate(initial).minutes, 120);
+  const adjusted = changeRequiredWork(initial, { sourceLineId: 11,
+    quantities: { deliveryMilli: 2000, installationMilli: 1000, collectionMilli: 0 },
+    reason: 'Only one of these two chairs needs assembly.' }, operator, start);
+  assert.equal(status(initial).totalInstallationMilli, 2000);
+  assert.equal(status(adjusted).totalInstallationMilli, 1000);
+  assert.equal(status(adjusted, 22).totalInstallationMilli, 2000);
+  assert.equal(remainingWorkEstimate(adjusted).minutes, 105);
+
+  const refreshed = structuredClone(adjusted.source);
+  refreshed.notes = 'Updated source notes';
+  assert.deepEqual(requiredWorkSourceConflicts(adjusted, refreshed), []);
+  acceptSourceSnapshot(adjusted, refreshed);
+  assert.equal(status(adjusted).totalInstallationMilli, 1000);
+
+  const replaced = { ...refreshed, items: refreshed.items.map((item) => item.sourceLineId === 11
+    ? { ...item, saleOrderLineId: 51 } : item) };
+  const reduced = { ...refreshed, items: refreshed.items.map((item) => item.sourceLineId === 11
+    ? { ...item, quantity: 1 } : item) };
+  assert.deepEqual(requiredWorkSourceConflicts(adjusted, replaced), [11]);
+  assert.deepEqual(requiredWorkSourceConflicts(adjusted, reduced), [11]);
+
+  const newDefault = changeServicePlan(adjusted, { defaultService: 'delivery_only' });
+  assert.equal(status(newDefault).service, 'delivery_installation');
+  assert.equal(status(newDefault, 22).service, 'delivery_only');
+  assert.throws(() => changeServicePlan(newDefault, { sourceLineId: 11, service: null }), fails('RESET_REQUIRED_WORK_FIRST'));
+  const reset = changeRequiredWork(newDefault, { sourceLineId: 11, quantities: null, reason: 'Restore full assembly.' }, operator, end);
+  assert.equal(status(reset).totalInstallationMilli, 2000);
+  assert.equal(status(reset).requiredQuantitiesCustomized, false);
+
+  const deliveryOnlyWork = changeRequiredWork(reset, { sourceLineId: 11,
+    quantities: { deliveryMilli: 2000, installationMilli: 0, collectionMilli: 0 },
+    reason: 'The customer cancelled installation.' }, operator, end);
+  const withRates = changeWorkTimes(deliveryOnlyWork, { sourceLineId: 11,
+    deliveryMinutesPerUnit: 5, installationMinutesPerUnit: 45, collectionMinutesPerUnit: null }, operator, end);
+  const estimate = lineWorkTimes(withRates).find(({ sourceLineId }) => sourceLineId === 11);
+  assert.equal(estimate?.installationMinutesPerUnit, 45);
+  assert.equal(estimate?.remainingMinutes, 10, 'The estimate counts the two deliveries and zero installations');
+});
 
 void test('product problems create distinct order-line issues, link only matching photos and replay without duplication', () => {
   const delivery = fixture();
@@ -156,7 +199,7 @@ void test('known teaching-source codes initialize services exactly and later sou
     assert.equal(mappedSourceService(unknown), null);
   }
   const fresh = createDelivery({ ...fixture().source, serviceType: 'delivery_and_assembly' }, randomUUID());
-  assert.deepEqual(fresh.servicePlan, { defaultService: 'delivery_installation', overrides: [] });
+  assert.deepEqual(fresh.servicePlan, { defaultService: 'delivery_installation', defaultOrigin: 'source', overrides: [] });
   assert.equal(status(fresh).remainingInstallationMilli, 2000);
   const selected = changeServicePlan(fresh, { sourceLineId: 22, service: 'collection_only' });
   selected.source.serviceType = 'delivery';

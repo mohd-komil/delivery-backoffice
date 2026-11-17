@@ -95,7 +95,7 @@ void test('work scope HTTP contracts, atomic reservations and source races on ow
       delivery.source.serviceType = 'delivery_and_assembly';
       await store.save(db.source.manager, delivery);
       const detail = Detail.parse(await success(`/deliveries/${delivery.id}/appointments`, 'POST', { version: 1, requestId: randomUUID(), startsAt, endsAt, workLines }));
-      assert.deepEqual(detail.delivery.servicePlan, { defaultService: 'delivery_installation', overrides: [] });
+      assert.deepEqual(detail.delivery.servicePlan, { defaultService: 'delivery_installation', defaultOrigin: 'source', overrides: [] });
       assert.equal(detail.delivery.appointments[0]?.workScope?.lines[0]?.service, 'delivery_installation');
       assert.equal(detail.lineServices[0]?.remainingInstallationMilli, 2000);
     });

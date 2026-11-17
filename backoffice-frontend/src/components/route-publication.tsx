@@ -1,5 +1,8 @@
 'use client';
 
+import { Combobox } from './ui/combobox';
+
+
 import { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { motion, MotionConfig } from 'motion/react';
@@ -75,7 +78,6 @@ function PublicationForm({ route, dirty, revision, participants, onPublished, on
   const [loadError, setLoadError] = useState<unknown>(null);
   const [retry, setRetry] = useState(0);
   const [selections, setSelections] = useState<Record<string, Selection>>({});
-  const [phone, setPhone] = useState('');
   const [failure, setFailure] = useState<unknown>(null);
   const [pending, setPending] = useState<'review' | 'publish' | null>(null);
   const [review, setReview] = useState<{ key: string; input: PublicationRequest; result: PublicationReview } | null>(null);
@@ -145,8 +147,7 @@ function PublicationForm({ route, dirty, revision, participants, onPublished, on
           ...(selection.returnRequestId ? { returnRequestId: selection.returnRequestId } : {}) });
       }
     }
-    const parsed = publicationRequestSchema.safeParse({ version: route.version, stops,
-      ...(route.planning?.driver.kind === 'external' ? { externalDriverPhone: phone } : {}) });
+    const parsed = publicationRequestSchema.safeParse({ version: route.version, stops });
     return parsed.success ? { input: parsed.data, message: null } : { input: null, message: t('invalid') };
   }
 
@@ -209,14 +210,13 @@ function PublicationForm({ route, dirty, revision, participants, onPublished, on
             </> : <>
               <WorkScopeFields source={detail.delivery.source} lines={detail.lineServices ?? []} drafts={selection.drafts} onChange={(drafts) => change(stop, { drafts })} />
               <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <Field label={t('responsible')}><select value={selection.responsibleParticipantId} onChange={(event) => change(stop, { responsibleParticipantId: event.target.value })}><option value="">{t('selectResponsible')}</option>{selectedPeople.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></Field>
+                <Field label={t('responsible')}><Combobox value={selection.responsibleParticipantId} onChange={(event) => change(stop, { responsibleParticipantId: event.target.value })}><option value="">{t('selectResponsible')}</option>{selectedPeople.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</Combobox></Field>
                 <fieldset className="grid content-start gap-2"><legend className="mb-2 text-sm font-medium">{t('tasks')}</legend>{loaded.templates.filter((template) => template.enabled).map((template) => <label key={template.id} className="flex items-start gap-2 text-sm"><Input type="checkbox" checked={selection.templateIds.includes(template.id)} onChange={(event) => change(stop, { templateIds: event.target.checked ? [...selection.templateIds, template.id] : selection.templateIds.filter((id) => id !== template.id) })} />{template.title}</label>)}{!loaded.templates.some((template) => template.enabled) ? <p className="text-xs text-muted-foreground">{t('noTemplates')}</p> : null}</fieldset>
               </div>
-              {detail.delivery.returnRequests.some((entry) => entry.status === 'requested') ? <Field label={deliveryText('returnRequest')}><select value={selection.returnRequestId} onChange={(event) => change(stop, { returnRequestId: event.target.value })}><option value="">{deliveryText('regularVisit')}</option>{detail.delivery.returnRequests.filter((entry) => entry.status === 'requested').map((entry) => <option key={entry.id} value={entry.id}>{entry.reason} · {entry.remainingWork}</option>)}</select></Field> : null}
+              {detail.delivery.returnRequests.some((entry) => entry.status === 'requested') ? <Field label={deliveryText('returnRequest')}><Combobox value={selection.returnRequestId} onChange={(event) => change(stop, { returnRequestId: event.target.value })}><option value="">{deliveryText('regularVisit')}</option>{detail.delivery.returnRequests.filter((entry) => entry.status === 'requested').map((entry) => <option key={entry.id} value={entry.id}>{entry.reason} · {entry.remainingWork}</option>)}</Combobox></Field> : null}
             </>}
           </section>;
         })}
-        {route.planning?.driver.kind === 'external' ? <Field label={t('phone')}><Input type="tel" value={phone} maxLength={200} onChange={(event) => setPhone(event.target.value)} /></Field> : null}
       </fieldset>
       {inputResult.message ? <p className="text-sm text-warning-foreground">{inputResult.message}</p> : null}
       <div><Button type="button" variant="outline" disabled={pending !== null || dirty || !dataReady || !inputResult.input} onClick={() => { void check(); }}>{t(pending === 'review' ? 'reviewing' : 'review')}</Button></div>
@@ -228,7 +228,7 @@ function PublicationForm({ route, dirty, revision, participants, onPublished, on
       <p className="text-xs font-medium text-info-foreground">{t('estimate')}</p>
       <dl className="grid gap-2 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">{t('departure')}</dt><dd className="font-mono text-xs">{formatDateTime(review.result.timeline.departAt, locale)}</dd></div><div><dt className="text-muted-foreground">{t('return')}</dt><dd className="font-mono text-xs">{review.result.timeline.returnAt ? formatDateTime(review.result.timeline.returnAt, locale) : '—'}</dd></div></dl>
       <p className="text-sm">{t('resources')}: {selectedPeople.map((person) => person.name).join(', ')}</p>
-      <dl className="grid gap-2 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">{routeText('vehicle')}</dt><dd>{vehicleName ?? routeText('unassigned')}</dd></div><div><dt className="text-muted-foreground">{routeChecks('driver')}</dt><dd>{route.planning?.driver.kind === 'external' ? `${route.planning.driver.name} · ${phone}` : route.planning?.driver.kind === 'participant' ? selectedPeople.find((person) => route.planning?.driver.kind === 'participant' && person.id === route.planning.driver.participantId)?.name : '—'}</dd></div></dl>
+      <dl className="text-sm"><div><dt className="text-muted-foreground">{routeText('vehicle')}</dt><dd>{vehicleName ?? routeText('unassigned')}</dd></div></dl>
       <p className="text-xs text-muted-foreground">{t('routeBuffer', { minutes: route.planning?.transferBufferMinutes ?? 0 })}</p>
       {review.result.feasibility.findings.length ? <ul className="grid gap-1 text-sm text-warning-foreground">{review.result.feasibility.findings.map((finding, index) => <li key={`${finding.code}:${index}`}>{finding.message}</li>)}</ul> : null}
       <ol className="grid gap-3">{review.result.stops.map((stop, index) => <li key={stop.deliveryId} className="rounded-md border bg-background p-3">

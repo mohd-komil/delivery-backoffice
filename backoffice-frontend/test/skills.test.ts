@@ -68,7 +68,7 @@ void test('skills qualification checks every actual person, not the union or nam
   assert.deepEqual(skillSelectionProblems([disabledId], [disabledId], api.skills), []); assert.match(skillSelectionProblems([disabledId], [], api.skills).join(' '), /disabled/);
 });
 
-void test('admin skill create and disable use validated HTTP payloads while operators only read the catalog', { concurrency: false }, async () => {
+void test('admin skill create and disable use validated HTTP payloads and operator catalog management includes participant grants', { concurrency: false }, async () => {
   const api = fixture(); const page = await domHarness(api);
   try {
     const { SkillsDirectory } = await import('../src/components/skills-directory'); await page.render(createElement(SkillsDirectory, { user: admin })); const document = page.dom.window.document;
@@ -82,8 +82,8 @@ void test('admin skill create and disable use validated HTTP payloads while oper
     const edit = Array.from(document.querySelectorAll('button')).find((entry) => entry.getAttribute('aria-label') === 'Edit skill Assembly'); assert.ok(edit); await click(edit); const editor = document.querySelector('.dialog'); assert.ok(editor); await toggle(editor, '[name="enabled"]');
     const patch = api.defer(`/skills/${assemblyId}`, 'PATCH'); await submit(htmlForm(editor)); assert.equal(patch.called, true); const mutation = api.calls.find((entry) => entry.method === 'PATCH'); assert.ok(mutation); assert.equal(z.object({ version: z.literal(1), enabled: z.literal(false) }).passthrough().parse(mutation.body).enabled, false);
     const skill = api.skills[0]; assert.ok(skill); await act(async () => { patch.reply({ ...skill, version: 2, enabled: false }); }); await settle();
-    await page.render(createElement(SkillsDirectory, { key: 'operator', user })); await waitFor(() => document.querySelector('.skills-table') !== null, 'operator catalog'); assert.doesNotMatch(document.body.textContent ?? '', /New skill|Edit skill/);
-    await click(button(document, 'Participant skills')); assert.ok(document.querySelector('.participant-skills-table')); assert.doesNotMatch(document.body.textContent ?? '', /Edit skills/);
+    await page.render(createElement(SkillsDirectory, { key: 'operator', user })); await waitFor(() => document.querySelector('.skills-table') !== null, 'operator catalog'); assert.equal(button(document, '+ New skill').disabled, false); assert.ok(document.querySelector('button[aria-label^="Edit skill "]'));
+    await click(button(document, 'Participant skills')); assert.ok(document.querySelector('.participant-skills-table')); assert.equal(button(document, 'Edit skills').disabled, false);
   } finally { await page.close(); }
 });
 
@@ -100,10 +100,10 @@ void test('skills refresh preserves filter, table, dialog input and original opt
   } finally { await page.close(); }
 });
 
-void test('participant skills quick edit sends only IDs and captured version; disabled retained links can be removed but not newly granted', { concurrency: false }, async () => {
+void test('operator participant skills quick edit sends only IDs and captured version; disabled retained links can be removed but not newly granted', { concurrency: false }, async () => {
   const api = fixture(); const original = api.participants[0]; assert.ok(original); api.participants[0] = { ...original, skillIds: [assemblyId, disabledId] }; const page = await domHarness(api);
   try {
-    const { SkillsDirectory } = await import('../src/components/skills-directory'); await page.render(createElement(SkillsDirectory, { user: admin })); const document = page.dom.window.document; await waitFor(() => document.querySelector('.skills-table') !== null, 'catalog'); await click(button(document, 'Participant skills')); await click(button(document, 'Edit skills')); const editor = document.querySelector('.dialog'); assert.ok(editor);
+    const { SkillsDirectory } = await import('../src/components/skills-directory'); await page.render(createElement(SkillsDirectory, { user })); const document = page.dom.window.document; await waitFor(() => document.querySelector('.skills-table') !== null, 'catalog'); await click(button(document, 'Participant skills')); await click(button(document, 'Edit skills')); const editor = document.querySelector('.dialog'); assert.ok(editor);
     const archived = input(editor, `[data-skill-id="${disabledId}"]`); assert.equal(archived.checked, true); assert.equal(archived.disabled, false); await toggle(editor, `[data-skill-id="${disabledId}"]`); await toggle(editor, `[data-skill-id="${electricId}"]`);
     const patch = api.defer(`/participants/${firstId}/skills`, 'PATCH'); await submit(htmlForm(editor)); assert.equal(patch.called, true); const call = api.calls.find((entry) => entry.method === 'PATCH'); assert.ok(call); assert.deepEqual(z.object({ version: z.literal(1), skillIds: z.array(z.uuid()) }).strict().parse(call.body), { version: 1, skillIds: [assemblyId, electricId] }); await act(async () => { patch.reply({ ...original, version: 2, skillIds: [assemblyId, electricId] }); });
     await waitFor(() => document.querySelector('.dialog') === null, 'skill update'); const second = Array.from(document.querySelectorAll('button')).find((entry) => entry.getAttribute('aria-label') === 'Edit skills for DEMO electrical only'); assert.ok(second); await click(second); const nextEditor = document.querySelector('.dialog'); assert.ok(nextEditor); assert.equal(input(nextEditor, `[data-skill-id="${disabledId}"]`).disabled, true);

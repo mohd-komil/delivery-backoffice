@@ -1,4 +1,10 @@
 export const en = {
+  filtersTitle: 'Filter appointments',
+  filtersHint: 'Destinations cover all deliveries; teams come from the full directory, regardless of this period. Destination counts are deliveries. Related address fields fill automatically when only one value matches.',
+  loadingFilterLists: 'Loading all destinations and teams…', filterListsUnavailable: 'Filter lists could not be updated.', retryFilterLists: 'Retry filter lists',
+  teamFilter: 'Team', allTeams: 'All teams', customerNameFilter: 'Customer name', customerSearch: 'Search by customer name…',
+  filteredCount: '{shown, number} of {total, number} appointments',
+  noMatchingAppointments: 'No appointments match these filters', filterEmptyHelp: 'Change or clear the filters, or choose another period.',
   day: 'Day',
   week: 'Week',
   month: 'Month',
@@ -90,6 +96,12 @@ export const en = {
 };
 
 export const it = {
+  filtersTitle: 'Filtra appuntamenti',
+  filtersHint: 'Le destinazioni comprendono tutte le consegne e le squadre l’intero elenco, indipendentemente dal periodo. I conteggi delle destinazioni indicano le consegne. I campi dell’indirizzo si compilano automaticamente quando esiste un solo valore corrispondente.',
+  loadingFilterLists: 'Caricamento di tutte le destinazioni e squadre…', filterListsUnavailable: 'Impossibile aggiornare gli elenchi dei filtri.', retryFilterLists: 'Ricarica elenchi filtri',
+  teamFilter: 'Squadra', allTeams: 'Tutte le squadre', customerNameFilter: 'Nome cliente', customerSearch: 'Cerca per nome cliente…',
+  filteredCount: '{shown, number} di {total, number} appuntamenti',
+  noMatchingAppointments: 'Nessun appuntamento corrisponde ai filtri', filterEmptyHelp: 'Modifica o azzera i filtri, oppure scegli un altro periodo.',
   day: 'Giorno',
   week: 'Settimana',
   month: 'Mese',
@@ -181,6 +193,12 @@ export const it = {
 } satisfies Record<keyof typeof en, string>;
 
 export const ru = {
+  filtersTitle: 'Фильтры визитов',
+  filtersHint: 'Адреса берутся из всех доставок, команды — из полного справочника независимо от периода. Числа у адресов — количество доставок. Связанные поля адреса подставляются, если подходит только одно значение.',
+  loadingFilterLists: 'Загружаем все адреса и команды…', filterListsUnavailable: 'Не удалось обновить списки фильтров.', retryFilterLists: 'Повторить загрузку списков',
+  teamFilter: 'Команда', allTeams: 'Все команды', customerNameFilter: 'Имя клиента', customerSearch: 'Поиск по имени клиента…',
+  filteredCount: '{shown, number} из {total, number} визитов',
+  noMatchingAppointments: 'Нет визитов по выбранным фильтрам', filterEmptyHelp: 'Измените или сбросьте фильтры либо выберите другой период.',
   day: 'День',
   week: 'Неделя',
   month: 'Месяц',
@@ -272,6 +290,12 @@ export const ru = {
 } satisfies Record<keyof typeof en, string>;
 
 export const uz = {
+  filtersTitle: 'Tashriflarni filtrlash',
+  filtersHint: 'Manzillar barcha yetkazib berishlardan, brigadalar to‘liq katalogdan olinadi, davrga bog‘liq emas. Manzil yonidagi sonlar yetkazib berishlar sonidir. Faqat bitta mos qiymat bo‘lsa, bog‘liq manzil maydonlari avtomatik to‘ldiriladi.',
+  loadingFilterLists: 'Barcha manzillar va brigadalar yuklanmoqda…', filterListsUnavailable: 'Filtr ro‘yxatlarini yangilab bo‘lmadi.', retryFilterLists: 'Ro‘yxatlarni qayta yuklash',
+  teamFilter: 'Brigada', allTeams: 'Barcha brigadalar', customerNameFilter: 'Mijoz nomi', customerSearch: 'Mijoz nomi bo‘yicha qidirish…',
+  filteredCount: '{shown, number} / {total, number} tashrif',
+  noMatchingAppointments: 'Bu filtrlarga mos tashrif yo‘q', filterEmptyHelp: 'Filtrlarni o‘zgartiring yoki tozalang, yoxud boshqa davrni tanlang.',
   day: 'Kun',
   week: 'Hafta',
   month: 'Oy',

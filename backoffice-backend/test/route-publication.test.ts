@@ -18,6 +18,7 @@ import { RouteDraftInputSchema, RouteTimelineSchema, type RouteDraftInput } from
 import { RouteFeasibilitySchema } from '../src/routing/feasibility';
 import { GoogleRoads } from '../src/routing/google-maps';
 import { RouteDetailSchema, RoutePreviewSchema } from '../src/routing/http-contracts';
+import { RouteOperationsSchema } from '../src/routing/lifecycle-contracts';
 import { routeJob } from '../src/routing/service';
 
 class PublicationDatabase extends Database {
@@ -124,7 +125,7 @@ void test('route publication uses real authorization and atomic work/resource ow
         workFingerprint: routeJob(delivery).workFingerprint, customerWindow: { kind: 'unrestricted' } })), manualEstimates: [],
       planning: { participantIds: [participant.id], participantAvailability: [{ participantId: participant.id,
         workingIntervals: [{ startsAt: '2032-05-12T06:00:00Z', endsAt: '2032-05-12T18:00:00Z' }], unavailableIntervals: [] }],
-      vehicleAvailability: null, driver: { kind: 'participant', participantId: participant.id }, transferBufferMinutes: 5 },
+      vehicleAvailability: null, transferBufferMinutes: 5 },
     });
     return { participant, crew, vehicle, template, deliveries, draft };
   }
@@ -496,7 +497,7 @@ void test('route publication uses real authorization and atomic work/resource ow
       assert.equal(CrewSchema.parse(await success(`/crews/${f.crew.id}`)).enabled, true);
     });
 
-    await context.test('unknown customer windows and incomplete external-driver details cannot be waived by accepting estimates', async () => {
+    await context.test('unknown customer windows cannot be waived by accepting estimates', async () => {
       const f = await fixture(1);
       f.draft.stops = f.draft.stops.map((stop) => ({ ...stop, customerWindow: { kind: 'unknown' } }));
       const prepared = await prepare(f);
@@ -505,15 +506,24 @@ void test('route publication uses real authorization and atomic work/resource ow
       const before = await snapshot();
       assert.equal((await request(`/routes/${prepared.saved.id}/publish`, 'POST', prepared.publish)).response.status, 409);
       assert.deepEqual(await snapshot(), before);
+    });
+
+    await context.test('publishes a legacy draft without the saved driver or any driver contact', async () => {
       const external = await fixture(1); assert.ok(external.draft.planning);
-      external.draft.planning.driver = { kind: 'external', name: 'DEMO external driver', availability: { startsAt: '2032-05-12T06:00:00Z', endsAt: '2032-05-12T18:00:00Z' } };
-      const saved = await saveDraft(external.draft);
+      const saved = RouteDetailSchema.parse(await success('/routes', 'POST', { ...external.draft, requestId: randomUUID(),
+        planning: { ...external.draft.planning, driver: undefined } }));
+      assert.deepEqual(saved.planning?.driver, { kind: 'none' });
+      await db.source.query("UPDATE route_draft SET data=jsonb_set(data, '{planning,driver}', $2::jsonb) WHERE id=$1", [
+        saved.id, JSON.stringify({ kind: 'external', name: 'DEMO legacy driver', availability: null }),
+      ]);
       const input = { version: saved.version, stops: selections(external) };
-      const beforeDriver = await snapshot();
-      assert.equal((await request(`/routes/${saved.id}/publication-review`, 'POST', input)).response.status, 409);
-      assert.deepEqual(await snapshot(), beforeDriver);
-      const complete = Review.parse(await success(`/routes/${saved.id}/publication-review`, 'POST', { ...input, externalDriverPhone: '+39000000003' }));
+      const complete = Review.parse(await success(`/routes/${saved.id}/publication-review`, 'POST', input));
       assert.equal(complete.feasibility.status, 'feasible_estimate');
+      await success(`/routes/${saved.id}/publish`, 'POST', { ...input, requestId: randomUUID(), fingerprint: complete.fingerprint, acknowledgeEstimates: true });
+      const live = RouteOperationsSchema.parse(await success(`/routes/${saved.id}/operations`));
+      assert.equal(live.externalDriverPhone, null);
+      assert.deepEqual(live.draft.planning?.driver, { kind: 'none' });
+      assert.deepEqual(live.resources.driver, { kind: 'none' });
     });
 
     await context.test('route-to-route transfer uses the larger buffer exactly once', async () => {

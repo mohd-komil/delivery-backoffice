@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppointmentSchema, ChecklistItemSchema, CrewDrawingInputSchema, CustomerDrawingInputSchema, DeliverySchema, IdSchema, IncompleteWorkSchema, InstantSchema, InstructionsSchema, IssueInputSchema, ItemChecksSchema, LineServiceStatusSchema, MAX_VISIT_EVIDENCE, QuantityResultSchema, ResponsibleParticipantSchema, ScopeReviewReasonSchema, ServiceTypeSchema, SourceItemSchema, SourceSchema, TaskSchema, TextSchema, VehicleSnapshotSchema, WorkLineInputSchema } from '../domain/model';
+import { AppointmentSchema, ChecklistItemSchema, CrewDrawingInputSchema, CustomerDrawingInputSchema, DeliverySchema, IdSchema, IncompleteWorkSchema, InstantSchema, InstructionsSchema, IssueInputSchema, ItemChecksSchema, LineServiceStatusSchema, MAX_VISIT_EVIDENCE, QuantityResultSchema, ResponsibleParticipantSchema, ScopeReviewReasonSchema, ServiceTypeSchema, SignatureRefusalSchema, SourceItemSchema, SourceSchema, TaskSchema, TextSchema, VehicleSnapshotSchema, WorkLineInputSchema } from '../domain/model';
 import { CrewDocumentSchema, FilePayloadSchema } from '../evidence/files';
 import { ParticipantSchema, VersionSchema } from '../operations/contracts';
 
@@ -24,7 +24,6 @@ export const CrewIssueInput = CrewStartInput.extend({
 export const CREW_FINISH_PHOTOS_MAX_BYTES = 20 * 1024 * 1024;
 export const CREW_FINISH_JSON_MAX_BYTES = 32 * 1024 * 1024;
 const CompletionPhotos = z.array(FilePayloadSchema.extend({ sourceLineId: SourceItemSchema.shape.sourceLineId.optional() }))
-  .min(1, 'Add at least one photo of the completed work')
   .max(MAX_VISIT_EVIDENCE)
   // This measures canonical base64 without allocating decoded buffers. File inspection rejects noncanonical data.
   .refine((photos) => photos.reduce((total, { base64 }) => total + Buffer.byteLength(base64, 'base64'), 0)
@@ -36,10 +35,14 @@ export const CrewFinishInput = CrewStartInput.extend({
   itemChecks: ItemChecksSchema.optional(),
   incompleteWork: IncompleteWorkSchema.optional(),
   actualStart: InstantSchema.optional(),
-  customerSignature: CustomerDrawingInputSchema,
+  customerSignature: CustomerDrawingInputSchema.optional(),
+  signatureRefusal: SignatureRefusalSchema.optional(),
   crewSignature: CrewDrawingInputSchema,
   photos: CompletionPhotos,
-});
+}).refine(({ customerSignature, signatureRefusal }) => customerSignature !== undefined || signatureRefusal !== undefined,
+  { path: ['customerSignature'], message: 'Capture the customer signature or report the reason for refusal' })
+  .refine(({ photos, signatureRefusal }) => photos.length > 0 || signatureRefusal !== undefined,
+    { path: ['photos'], message: 'Add at least one photo of the completed work' });
 
 const Customer = SourceSchema.shape.customer;
 const CrewVisitSummarySchema = AppointmentSchema.pick({ id: true, startsAt: true, endsAt: true }).extend({
@@ -59,6 +62,7 @@ export const CrewVisitDetailSchema = CrewVisitSummarySchema.extend({
   responsibleParticipant: ResponsibleParticipantSchema.nullable(),
   canFinish: z.boolean(),
   canStart: z.boolean(),
+  signatureRefusalStatus: z.enum(['pending', 'approved', 'corrected']).optional(),
   scopeReviewReason: ScopeReviewReasonSchema,
   workScope: z.object({revision:z.number().int().positive(),confirmedAt:InstantSchema,
     lines:z.array(WorkLineInputSchema.safeExtend({service:ServiceTypeSchema})).min(1).max(500)}).strict().nullable(),

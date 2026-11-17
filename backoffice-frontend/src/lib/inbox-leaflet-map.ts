@@ -1,5 +1,7 @@
 import type * as Leaflet from 'leaflet';
 import { normalizeInboxMapArea, type InboxMapArea } from './inbox-map-area';
+import { openStreetMapTiles } from './open-street-map';
+import { installReducedMotionMapKeys } from './leaflet-reduced-motion';
 
 export type InboxMapPoint = {
   deliveryId: string;
@@ -89,24 +91,9 @@ export function mountInboxLeafletMap(
     zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false,
     minZoom: 3, maxZoom: 19, scrollWheelZoom: false, inertia: false,
   });
-  const reducedMotionKeyboard = (event: KeyboardEvent) => {
-    if (event.target !== element || event.altKey || event.ctrlKey || event.metaKey
-      || typeof window.matchMedia !== 'function' || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const offsets: Record<string, [number, number]> = { ArrowLeft: [-80, 0], ArrowRight: [80, 0], ArrowUp: [0, -80], ArrowDown: [0, 80] };
-    const offset = offsets[event.key];
-    if (!offset) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const factor = event.shiftKey ? 3 : 1;
-    map.panBy([offset[0] * factor, offset[1] * factor], { animate: false });
-  };
-  element.addEventListener('keydown', reducedMotionKeyboard);
+  const removeKeyboardHandler = installReducedMotionMapKeys(element, map);
   // Browser-native caching/referer; only tiles required by the current interactive view are loaded.
-  const tiles = leaflet.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19, noWrap: true, updateWhenIdle: true, keepBuffer: 1,
-    referrerPolicy: 'strict-origin-when-cross-origin',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
-  });
+  const tiles = openStreetMapTiles(leaflet);
   const failedTiles = new Set<string>();
   let destroyed = false;
   const tileKey = ({ x, y, z }: Leaflet.Coords) => `${z}/${x}/${y}`;
@@ -176,9 +163,10 @@ export function mountInboxLeafletMap(
     update(points: readonly InboxMapPoint[], filterKey: string, labels: InboxMapCanvasLabels): void {
       if (destroyed) return;
       const groups = groupPoints(points);
+      const firstAvailablePoints = currentPoints.length === 0 && points.length > 0;
       currentPoints = points;
       const filterChanged = currentFilterKey !== filterKey;
-      if (!initialized || filterChanged) fit();
+      if (!initialized || filterChanged || firstAvailablePoints) fit();
       currentFilterKey = filterKey;
       // Refreshing identical data keeps marker elements, popup selection and map viewport intact.
       const signature = JSON.stringify(groups.map(({ key, points: grouped }) => ({ key,
@@ -256,7 +244,7 @@ export function mountInboxLeafletMap(
     zoomOut(): void { if (!destroyed && initialized) map.zoomOut(1, { animate: false }); },
     destroy(): void {
       destroyed = true;
-      element.removeEventListener('keydown', reducedMotionKeyboard);
+      removeKeyboardHandler();
       observer?.disconnect();
       map.remove();
     },

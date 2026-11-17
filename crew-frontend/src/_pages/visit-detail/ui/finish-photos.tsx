@@ -1,5 +1,8 @@
 'use client';
 
+import { Combobox } from '@/shared/ui/combobox';
+
+
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { useEffect, useId, useRef, useState, type ChangeEvent } from 'react';
@@ -82,7 +85,7 @@ export function FinishPhotos({ items, photos, requiredError, onChange, previews,
     <p id={`${id}-hint`} className="text-muted">{fixedLineId===undefined?t('finishPhotoHint', { count: maxFinishPhotoCount, total: maxFinishPhotoMiB }):t('finishLinePhotoHint',{line:fixedLineId})}</p>
     {items.length > 0 && fixedLineId===undefined ? <label className="field">
       <span>{t('finishPhotoTarget')}</span>
-      <select value={targetId ?? ''} onChange={(event) => setTarget(event.currentTarget.value)} data-finish-photo-scope>{scopeOptions}</select>
+      <Combobox value={targetId ?? ''} onChange={(event) => setTarget(event.currentTarget.value)} data-finish-photo-scope>{scopeOptions}</Combobox>
     </label> : null}
     <div className="photo-actions">
       <input ref={camera} type="file" hidden accept={photoAccept} capture="environment" onChange={choosePhotos} />
@@ -107,13 +110,13 @@ export function FinishPhotos({ items, photos, requiredError, onChange, previews,
             onClick={() => removePhoto(previewUrl)}>{t('removePhoto')}</Button>
           {fixedLineId===undefined&&(items.length > 0 || unavailable) ? <label className="field w-full pb-1">
             <span>{t('finishPhotoProduct')}</span>
-            <select value={sourceLineId ?? ''} aria-label={t('finishPhotoProductFor', { name: file.name, number: index + 1 })}
+            <Combobox value={sourceLineId ?? ''} aria-label={t('finishPhotoProductFor', { name: file.name, number: index + 1 })}
               aria-invalid={unavailable || undefined} aria-describedby={unavailable ? `${id}-error` : undefined}
               data-finish-photo-scope data-finish-photo-unavailable={unavailable || undefined}
               onChange={(event) => changeScope(previewUrl, event.currentTarget.value)}>
               {unavailable ? <option value={sourceLineId} disabled>{t('productLine', { line: sourceLineId })}</option> : null}
               {scopeOptions}
-            </select>
+            </Combobox>
           </label> : null}
         </li>;
       })}

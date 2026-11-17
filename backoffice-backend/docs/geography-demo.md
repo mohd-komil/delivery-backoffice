@@ -1,5 +1,13 @@
 # Synthetic city, province and postal-code filters
 
+## Calendar destination projection — 2026-11-13
+
+`GET /calendar?from=…&to=…` also returns `geography` for each appointment: nullable `city`, `province`, `postalCode`, and provenance `source` (`odoo`, `synthetic_fixture`, or null). It uses the same `deliveryGeography` resolver as the delivery list, preserving leading postal-code zeros and rejecting stale address-bound teaching metadata. This adds no write, migration, per-visit detail query or Odoo access; existing interval limits, authorization and drawing redaction remain unchanged.
+
+Following the user's correction, filter choices come from `GET /calendar/filter-options`, independently of the current date range and appointments. `destinations` contains case-insensitively grouped city/province/postal-code triplets with delivery counts across every local delivery, including unbooked and completed work. `crews` contains all current crew IDs, names and enabled flags, including unused and disabled teams. The catalogue reads only source-customer/address-geography projections instead of products and results, and does not inherit the delivery-list store's 5000-row bound. It uses the authoritative geography resolver and normal Backoffice authentication. No date-query parameters are accepted.
+
+Validation: backend typecheck, full typed lint and 21 focused tests in `participant-calendar.test.ts` / `delivery-geography.test.ts` passed. The HTTP tests use real guards and owned schemas in Docker PostgreSQL `delivery_backoffice_test`; they verify source and synthetic geography, leading zeros, range validation, anonymous rejection and unchanged business records. The catalogue tests also cover an empty calendar month, destinations from all delivery pages, an out-of-period visit and unused active/disabled teams. Live API deployment is performed separately from these checks.
+
 **Current stand, 2026-11-09:** all `Via Dimostrativa` addresses now have [public venue reference addresses and sourced CAP values](public-demo-addresses.md). Historical synthetic CAP groups below describe the earlier fixtures. Filter behavior is unchanged; current choices/counts come from the updated data.
 
 City continues to come from the existing read-only source snapshot. Province and postal code for the local stand are teaching metadata in `delivery.data.addressGeography`:

@@ -4,6 +4,83 @@ import { proxyCrewRequest } from '../src/_app/crew-api/proxy';
 
 const origin = 'http://127.0.0.1:3002';
 
+void test('customer-development origins work outside test mode and preserve the Crew session boundary', async (t) => {
+  const customerDevelopmentOrigin = 'http://127.0.0.1:3032';
+  const previousOrigin = process.env.CREW_API_ORIGIN;
+  const previousTest = process.env.BACKOFFICE_TEST;
+  const forwarded: string[] = [];
+  const upstream = t.mock.method(globalThis, 'fetch', (destination: URL, init: RequestInit) => {
+    forwarded.push(destination.href);
+    const headers = new Headers(init.headers);
+    assert.equal(headers.get('cookie'), 'crew_session=customer-development-session');
+    assert.equal(headers.get('origin'), customerDevelopmentOrigin);
+    assert.equal(init.redirect, 'error');
+    assert.equal(init.cache, 'no-store');
+    const responseHeaders = new Headers();
+    responseHeaders.append('Set-Cookie', 'backoffice_session=not-forwarded');
+    responseHeaders.append('Set-Cookie', 'crew_session=renewed-session; Path=/api/crew; HttpOnly');
+    return Promise.resolve(Response.json({ id: 'customer-development-participant' }, { headers: responseHeaders }));
+  });
+  try {
+    delete process.env.BACKOFFICE_TEST;
+    for (const allowed of ['http://127.0.0.1:3031', 'http://localhost:3031']) {
+      process.env.CREW_API_ORIGIN = allowed;
+      const request = new Request(customerDevelopmentOrigin, { headers: {
+        Origin: customerDevelopmentOrigin, Cookie: 'backoffice_session=dispatcher-session; crew_session=customer-development-session; locale=en',
+      } });
+      const response = await proxyCrewRequest(request, ['auth', 'me']);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('cache-control'), 'private, no-store');
+      assert.deepEqual(response.headers.getSetCookie(), ['crew_session=renewed-session; Path=/api/crew; HttpOnly']);
+      assert.equal((await proxyCrewRequest(new Request(origin), ['..', 'deliveries'])).status, 404);
+    }
+    assert.deepEqual(forwarded, ['http://127.0.0.1:3031/api/crew/auth/me', 'http://localhost:3031/api/crew/auth/me']);
+    assert.equal(upstream.mock.callCount(), 2);
+  } finally {
+    if (previousOrigin === undefined) delete process.env.CREW_API_ORIGIN; else process.env.CREW_API_ORIGIN = previousOrigin;
+    if (previousTest === undefined) delete process.env.BACKOFFICE_TEST; else process.env.BACKOFFICE_TEST = previousTest;
+  }
+});
+
+void test('adding the customer-development stand does not allow arbitrary or disguised upstream origins', async (t) => {
+  const previousOrigin = process.env.CREW_API_ORIGIN;
+  const previousTest = process.env.BACKOFFICE_TEST;
+  const upstream = t.mock.method(globalThis, 'fetch', () => { throw new Error('Unexpected upstream request'); });
+  try {
+    for (const mode of ['0', '1']) {
+      process.env.BACKOFFICE_TEST = mode;
+      for (const invalid of [
+        'http://example.test:3031', 'http://169.254.169.254', 'http://127.0.0.1:3032', 'https://127.0.0.1:3031',
+        'http://localhost:3031.example.test', 'http://user:password@127.0.0.1:3031',
+        'http://127.0.0.1:3031/', 'http://127.0.0.1:3031/api', 'http://127.0.0.1:3031?target=other',
+        'http://127.0.0.1:3031#other', 'http://localhost:3011',
+      ]) {
+        process.env.CREW_API_ORIGIN = invalid;
+        assert.equal((await proxyCrewRequest(new Request(origin), ['visits'])).status, 503, invalid);
+      }
+    }
+    assert.equal(upstream.mock.callCount(), 0);
+  } finally {
+    if (previousOrigin === undefined) delete process.env.CREW_API_ORIGIN; else process.env.CREW_API_ORIGIN = previousOrigin;
+    if (previousTest === undefined) delete process.env.BACKOFFICE_TEST; else process.env.BACKOFFICE_TEST = previousTest;
+  }
+});
+
+void test('an unconfigured Crew proxy still defaults to the original local backend', async (t) => {
+  const previousOrigin = process.env.CREW_API_ORIGIN;
+  const upstream = t.mock.method(globalThis, 'fetch', (destination: URL) => {
+    assert.equal(destination.href, 'http://127.0.0.1:3001/api/crew/visits');
+    return Promise.resolve(Response.json({ visits: [] }));
+  });
+  try {
+    delete process.env.CREW_API_ORIGIN;
+    assert.equal((await proxyCrewRequest(new Request(origin), ['visits'])).status, 200);
+    assert.equal(upstream.mock.callCount(), 1);
+  } finally {
+    if (previousOrigin === undefined) delete process.env.CREW_API_ORIGIN; else process.env.CREW_API_ORIGIN = previousOrigin;
+  }
+});
+
 void test('crew proxy cannot reach backoffice endpoints or write outside approved visit actions', async (t) => {
   const upstream = t.mock.method(globalThis, 'fetch', () => {
     throw new Error('Unexpected upstream request');

@@ -1,5 +1,8 @@
 'use client';
 
+import { Combobox } from './ui/combobox';
+
+
 import { useEffect, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { apiRequest, errorMessage } from '@/lib/api';
@@ -27,8 +30,8 @@ export function RouteFollowUpSelect({ line, operation, value, onChange }: {
   }, [line.deliveryId, retry]);
   const quantity = operation === 'delivery' ? 'deliveryMilli' : operation === 'installation' ? 'installationMilli' : 'collectionMilli';
   const eligible = appointments.filter((appointment) => appointment.id !== line.appointmentId && ['booked', 'in_progress'].includes(appointment.status) && appointment.workScope?.lines.some((item) => item.sourceLineId === line.sourceLineId && item[quantity] > 0));
-  return <div><Field label={t('followUp')}><select required value={value ?? ''} onChange={(event) => onChange(event.target.value || null)}><option value="">—</option>
+  return <div><Field label={t('followUp')}><Combobox required value={value ?? ''} onChange={(event) => onChange(event.target.value || null)}><option value="">—</option>
     {value && !eligible.some((appointment) => appointment.id === value) ? <option value={value} disabled>{t('stale')}</option> : null}
     {eligible.map((appointment) => <option key={appointment.id} value={appointment.id}>{formatDateTime(appointment.startsAt, locale)} – {formatDateTime(appointment.endsAt, locale)}</option>)}
-  </select></Field>{failure ? <p className="text-xs text-destructive">{errorMessage(failure, locale)} <Button type="button" variant="outline" size="sm" onClick={() => setRetry((value) => value + 1)}>{t('retry')}</Button></p> : null}</div>;
+  </Combobox></Field>{failure ? <p className="text-xs text-destructive">{errorMessage(failure, locale)} <Button type="button" variant="outline" size="sm" onClick={() => setRetry((value) => value + 1)}>{t('retry')}</Button></p> : null}</div>;
 }

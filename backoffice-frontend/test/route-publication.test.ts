@@ -21,7 +21,7 @@ const template = templateSchema.parse({ id: templateId, version: 1, title: 'Unlo
 const route = routeDraftSchema.parse({ id: routeId, name: 'DEMO publication', version: 1, createdAt: at, updatedAt: at,
   departAt: at, crewId, vehicleId, startPointId: 'depot', endPointId: 'depot', stops: [{ deliveryId: detail.delivery.id, workMinutes: 30 }], manualEstimates: [],
   planning: { participantIds: [personId], participantAvailability: [], vehicleAvailability: null,
-    driver: { kind: 'participant', participantId: personId }, transferBufferMinutes: 10 },
+    driver: { kind: 'external', name: 'Legacy demo driver', availability: null }, transferBufferMinutes: 10 },
   jobs: [], warnings: [], pointContexts: [],
   timeline: { departAt: at, startPointId: 'depot', endPointId: 'depot', returnDepartAt: at, returnAt: later,
     stops: [], returnTravelMinutes: 30, returnTravelSource: 'local_demo', travelMinutes: 60, workMinutes: 30, waitingMinutes: 0, totalMinutes: 90 },
@@ -66,11 +66,13 @@ void test('publication review selects exact work and preserves inputs on Refresh
     const { RoutePublication } = await import('../src/components/route-publication');
     await page.render(createElement(RoutePublication, { route, dirty: false, revision: 0, participants: [person], onPublished }));
     const quantity = await prepare(page);
+    assert.equal(page.container.querySelector('input[type="tel"]'), null);
     await click(button(page.container, 'Review publication'));
     await waitFor(() => page.container.textContent?.includes('Awaiting customer confirmation') === true, 'review');
     const call = api.calls.find((entry) => entry.pathname.endsWith('/publication-review'));
     assert.ok(call);
     const body = publicationRequestSchema.parse(call.body);
+    assert.equal(body.externalDriverPhone, undefined);
     const stop = body.stops[0]; assert.ok(stop?.mode === 'create');
     assert.equal(stop.workLines[0]?.deliveryMilli, 500);
     assert.equal(stop.responsibleParticipantId, personId);

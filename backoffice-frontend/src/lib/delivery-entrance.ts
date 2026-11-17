@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { mapCoordinatesSchema } from './map-coordinates';
+import { geocodingMetadataSchema } from './delivery-geocoding';
 
 const addressKey = z.string().regex(/^[a-f0-9]{64}$/);
 export const entrancePointSchema = mapCoordinatesSchema;
@@ -17,6 +18,7 @@ export const entranceReviewSchema = z.object({
   stale: z.boolean(),
   address: z.object({ street: z.string().nullable(), city: z.string().nullable(), country: z.string().nullable() }),
   referencePoint: entrancePointSchema.nullable(),
+  referenceGeocoding: geocodingMetadataSchema.optional(),
   mapConfig: z.object({ key: z.string().min(1), mapId: z.string().optional() }).nullable().default(null),
 });
 export type EntranceReviewData = z.infer<typeof entranceReviewSchema>;
@@ -33,10 +35,11 @@ export const entranceSuggestionSchema = z.object({ addressKey }).and(z.union([
   z.object({
     status: z.enum(['exact', 'approximate']),
     point: entrancePointSchema,
-    source: z.enum(['google', 'source']),
+    source: z.enum(['google', 'source', 'geoapify']),
+    attribution: z.string().min(1).max(2048).optional(),
   }),
   z.object({
-    status: z.enum(['ambiguous', 'not_found', 'unconfigured', 'unavailable', 'rate_limited', 'missing_address', 'outside_demo']),
+    status: z.enum(['ambiguous', 'not_found', 'unconfigured', 'unavailable', 'rate_limited', 'missing_address', 'outside_demo', 'not_requested', 'pending', 'invalid_address', 'quota_exceeded']),
     point: z.null(),
     source: z.null(),
   }),

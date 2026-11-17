@@ -1,5 +1,8 @@
 'use client';
 
+import { Combobox } from './ui/combobox';
+
+
 import { useLocale, useTranslations } from 'next-intl';
 import { useId, useState } from 'react';
 import { motion } from 'motion/react';
@@ -8,7 +11,7 @@ import { formatDateTime } from '@/lib/time';
 import { initialWorkDrafts, validateWorkDrafts } from '@/lib/visit-work';
 import { DateTimeFields, dateTimeField } from './date-time-fields';
 import { ActionForm, Field, Notice, textField } from './ui';
-import { DetailHeading } from './delivery-detail-presentation';
+import { DeliveryDetailCard } from './delivery-detail-card';
 import { WorkScopeFields } from './visit-work';
 
 export function AppointmentBookingForm({ delivery, lineServices, command }: {
@@ -30,8 +33,8 @@ export function AppointmentBookingForm({ delivery, lineServices, command }: {
 
   function resetPurpose() { setPurpose('regular'); setReturnId(''); }
 
-  return <section className="section-gap inset-card appointment-booking">
-    <DetailHeading icon="calendar">{t('bookHeading')}</DetailHeading>
+  return <DeliveryDetailCard title={t('bookHeading')} icon="calendar" className="appointment-booking">
+
     {delivery.sourceReview || delivery.completedAt ? <Notice>{t('bookBlocked')}</Notice> : <>
       <p className="small muted">{t('bookingIntro')}</p>
       <ActionForm dataVersion={delivery.version} onResetDraft={() => { setRequestId(crypto.randomUUID()); resetPurpose(); setWorkDrafts(initialWorkDrafts(lineServices ?? [])); }} submitLabel={t('book')} submitDisabled={!lineServices} onSubmit={async (data) => {
@@ -61,10 +64,10 @@ export function AppointmentBookingForm({ delivery, lineServices, command }: {
             </label>
           </div>
           {purpose === 'return' ? <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <Field label={t('returnRequest')}><select name="returnRequestId" required value={returnId} onChange={(event) => setReturnId(event.target.value)}>
+            <Field label={t('returnRequest')}><Combobox name="returnRequestId" required value={returnId} onChange={(event) => setReturnId(event.target.value)}>
               <option value="">{t('bookingChooseReturn')}</option>
               {requests.map((request) => <option value={request.id} key={request.id}>{request.reason}</option>)}
-            </select></Field>
+            </Combobox></Field>
             {selectedRequest ? <div className="booking-return-preview">
               <h4>{t('remainingWork')}</h4><p className="whitespace-pre-wrap break-words">{selectedRequest.remainingWork}</p>
               {origin ? <p className="small muted">{t('bookingOrigin', { date: formatDateTime(origin.startsAt, locale) })}</p> : null}
@@ -84,5 +87,5 @@ export function AppointmentBookingForm({ delivery, lineServices, command }: {
         <p className="small muted">{t('bookingNextStep')}</p>
       </ActionForm>
     </>}
-  </section>;
+  </DeliveryDetailCard>;
 }

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { act, createElement } from 'react';
+import { createElement } from 'react';
 import test from 'node:test';
 import type { Delivery } from '../src/lib/contracts';
-import { ApiFixture, button, click, domHarness, hasToast, user } from './refresh-fixtures';
+import { ApiFixture, button, click, domHarness, editInput, hasToast, user } from './refresh-fixtures';
 
 function heldDelivery():Delivery {
   const delivery=new ApiFixture().detail.delivery;
@@ -36,7 +36,7 @@ void test('readiness preserves same-SKU order identity and requires an explicit 
     await click(submit);
     assert.deepEqual(released,[],'An empty required explanation must never be submitted.');
     const note=first.querySelector('textarea');assert.ok(note);
-    await act(async()=>{note.value='  Replacement arrived and its finish was checked.  ';note.dispatchEvent(new Event('input',{bubbles:true}));});
+    await editInput(note,'  Replacement arrived and its finish was checked.  ');
     await click(submit);
     assert.deepEqual(released,[{sourceLineId:10,note:'Replacement arrived and its finish was checked.'}]);
     assert.ok(hasToast(page.dom.window.document,'Readiness recorded'));
@@ -53,7 +53,7 @@ void test('readiness refresh retains the note but refuses an obsolete delivery v
     const {DeliveryWorkReadiness}=await import('../src/components/delivery-work-readiness');
     await page.render(createElement(DeliveryWorkReadiness,{delivery,release}));
     const note=page.container.querySelector('textarea');assert.ok(note);
-    note.value='Inspected by warehouse';
+    await editInput(note,'Inspected by warehouse');
     await page.render(createElement(DeliveryWorkReadiness,{delivery:{...delivery,version:delivery.version+1},release}));
     assert.equal(page.container.querySelector('textarea'),note);
     assert.equal(note.value,'Inspected by warehouse');

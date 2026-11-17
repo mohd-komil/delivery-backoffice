@@ -10,11 +10,19 @@ const customerWindow = z.union([
   z.object({ kind: z.enum(['unknown', 'unrestricted']) }),
   z.object({ kind: z.enum(['arrival', 'work_end']), startsAt: instant, endsAt: instant }),
 ]);
+const geocodingMetadata = z.object({
+  provider: z.literal('geoapify'),
+  precision: z.enum(['building', 'amenity', 'street', 'suburb', 'district', 'postcode', 'city', 'county', 'state', 'country', 'unknown']),
+  confidence: z.number().min(0).max(1).nullable(),
+  attribution: z.string().min(1).max(2048),
+  acceptance: z.enum(['automatic', 'operator']),
+}).strict();
 
 export const routeStopSchema = z.object({
   deliveryId: z.uuid(), appointmentId: z.uuid(), sequence: z.number().int().positive(), source: z.enum(['created', 'attached']),
   pickingName: z.string(), customerName: z.string(), address: z.string().nullable(), city: z.string().nullable(),
   entrance: z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180), addressKey: z.string() }).nullable(),
+  geocoding: geocodingMetadata.optional(),
   customerWindow: customerWindow.nullable(), eta: instant.nullable(), workStartAt: instant.nullable(), workEndAt: instant.nullable(),
   status: z.enum(['booked', 'in_progress', 'completed', 'failed', 'cancelled']),
   confirmationStatus: z.enum(['customer_confirmed', 'awaiting_customer_confirmation']).nullable(),

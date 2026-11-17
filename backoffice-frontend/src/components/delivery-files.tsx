@@ -1,5 +1,8 @@
 'use client';
 
+import { Combobox } from './ui/combobox';
+
+
 import Image from 'next/image';
 import { useFormatter, useLocale, useTranslations } from 'next-intl';
 import { useRef, useState } from 'react';
@@ -11,7 +14,8 @@ import { formatDateTime } from '@/lib/time';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { ActionForm, Empty, Field, optionalText, textField } from './ui';
-import { DetailHeading, deliveryStatusLabel, type DeliveryText } from './delivery-detail-presentation';
+import { DetailIcon, deliveryStatusLabel, type DeliveryText } from './delivery-detail-presentation';
+import { DeliveryDetailCard } from './delivery-detail-card';
 
 type Command = (path: string, body: unknown, method?: string) => Promise<number>;
 type StoredFile = DeliveryDetail['files'][number];
@@ -31,7 +35,7 @@ export function DeliveryResultDocuments({ result, deliveryId }: { result: Appoin
   const lineText = useTranslations('delivery');
   const locale = useLocale();
   const items = new Map(result.sourceSnapshot.items.map((item) => [item.sourceLineId, item]));
-  return <details className="section-gap"><summary>{t('reportDocuments')}</summary>
+  return <details className="section-gap rounded-lg border border-border bg-background p-4"><summary className="cursor-pointer font-medium">{t('reportDocuments')}</summary>
     {result.documentSnapshot === undefined ? <p className="small muted">{t('noSnapshot')}</p>
       : result.documentSnapshot.length === 0 ? <p className="small muted">{lineText('noFiles')}</p>
         : <ul className="mt-3 grid gap-2">{result.documentSnapshot.map((document) => {
@@ -54,10 +58,10 @@ function FileCard({ file, detail, canReplace, replaced, onReplace }: {
   const format = useFormatter();
   const item = detail.delivery.source.items.find((entry) => entry.sourceLineId === file.itemId);
   const url = `${API_URL}/deliveries/${detail.delivery.id}/files/${file.id}`;
-  return <article className="file-card">
-    {file.mime.startsWith('image/') && file.status === 'ready' ? <Image unoptimized crossOrigin="use-credentials" width={120} height={90} src={url} alt={file.name} /> : <span className="file-icon" aria-hidden="true">▧</span>}
-    <div className="min-w-0">
-      <h4 className="break-words">{file.name}</h4>
+  return <article className="file-card bg-background shadow-xs">
+    {file.mime.startsWith('image/') && file.status === 'ready' ? <Image unoptimized crossOrigin="use-credentials" width={120} height={90} src={url} alt={file.name} /> : <span className="file-icon" aria-hidden="true"><DetailIcon name="file" /></span>}
+    <div className="min-w-0 space-y-1">
+      <h4 className="break-words font-semibold">{file.name}</h4>
       <p className="small muted">{deliveryStatusLabel(t, file.kind)} · {format.number(file.size / 1024, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} KB</p>
       <p className="small muted">{file.appointmentId ? t('visitNumber', { number: detail.delivery.appointments.findIndex((visit) => visit.id === file.appointmentId) + 1 }) : t('delivery')}
         {item ? ` · ${sourceLineLabel(detail.delivery.source, item, locale)}` : file.itemId ? ` · ${t('productLineId', { id: file.itemId })}` : ''}{file.issueId ? ` · ${t('linkedIssue')}` : ''}</p>
@@ -83,6 +87,9 @@ export function DeliveryFiles({ detail, command }: { detail: DeliveryDetail; com
   const documents = detail.files.filter((file) => file.kind === 'document');
   const groups = new Map<number | null, StoredFile[]>();
   for (const document of documents) groups.set(document.itemId, [...(groups.get(document.itemId) ?? []), document]);
+  const generalDocuments = groups.get(null) ?? [];
+  const productGroups = [...groups].flatMap(([lineId, files]) => lineId === null ? [] : [{ lineId, files }])
+    .sort((left, right) => left.lineId - right.lineId);
   const evidence = detail.files.filter((file) => file.kind !== 'document');
   const replacement = detail.files.find((file) => file.id === replacementId);
   function renderFiles(files: StoredFile[]) {
@@ -91,22 +98,29 @@ export function DeliveryFiles({ detail, command }: { detail: DeliveryDetail; com
       onReplace={() => { setReplacementId(file.id); uploadSection.current?.scrollIntoView({ block: 'start' }); }} />)}</div>;
   }
   return <>
-    <div className="section-title"><DetailHeading icon="file">{t('documentsEvidence')}</DetailHeading><span className="badge neutral">{t('privateStorage')}</span></div>
-    <p className="muted">{t('filesHint')}</p>
-    {detail.files.length === 0 ? <Empty title={t('noFiles')} /> : <>
-      {[...groups].sort(([left], [right]) => (left ?? -1) - (right ?? -1)).map(([lineId, files]) => {
+    <DeliveryDetailCard title={docs('generalDocuments')} icon="file" badge={t('privateStorage')}>
+      <p className="small muted">{t('filesHint')}</p>
+      {generalDocuments.length ? renderFiles(generalDocuments) : <Empty title={t('noFiles')} />}
+    </DeliveryDetailCard>
+    <DeliveryDetailCard title={docs('documents')} icon="instructions" badge={documents.length - generalDocuments.length}>
+      {productGroups.length ? <div className="space-y-5">{productGroups.map(({ lineId, files }) => {
         const item = detail.delivery.source.items.find((entry) => entry.sourceLineId === lineId);
-        return <section className="section-gap" key={lineId ?? 'general'}><h4>{lineId === null ? docs('generalDocuments') : item ? sourceLineLabel(detail.delivery.source, item, locale) : t('productLineId', { id: lineId })}</h4>{renderFiles(files)}</section>;
-      })}
-      {evidence.length ? <section className="section-gap"><h4>{t('linkedEvidence')}</h4>{renderFiles(evidence)}</section> : null}
-    </>}
-    {!detail.delivery.completedAt ? <section ref={uploadSection} className="section-gap inset-card">
-      <DetailHeading icon="file">{replacement ? docs('replace') : t('attachFile')}</DetailHeading>
-      <Field label={docs('replace')}><select value={replacement?.id ?? ''} onChange={(event) => setReplacementId(event.currentTarget.value || null)}>
+        return <section className="rounded-lg border border-border bg-muted/30 p-4" key={lineId}>
+          <h4 className="text-sm font-semibold [overflow-wrap:anywhere]">{item ? sourceLineLabel(detail.delivery.source, item, locale) : t('productLineId', { id: lineId })}</h4>{renderFiles(files)}
+        </section>;
+      })}</div> : <Empty title={t('noFiles')} />}
+    </DeliveryDetailCard>
+    <DeliveryDetailCard title={t('linkedEvidence')} icon="shield" badge={evidence.length}>
+      {evidence.length ? renderFiles(evidence) : <Empty title={t('noFiles')} />}
+    </DeliveryDetailCard>
+    {!detail.delivery.completedAt ? <section ref={uploadSection} className="scroll-mt-4">
+      <DeliveryDetailCard title={replacement ? docs('replace') : t('attachFile')} icon="file">
+      <Field label={docs('replace')}><Combobox value={replacement?.id ?? ''} onChange={(event) => setReplacementId(event.currentTarget.value || null)}>
         <option value="">{docs('newFile')}</option>{documents.filter((file) => file.status === 'ready' && !replacing.has(file.id)).map((file) => <option key={file.id} value={file.id}>{file.name} · {file.itemId === null ? docs('generalDocuments') : t('productLineId', { id: file.itemId })}</option>)}
-      </select></Field>
+      </Combobox></Field>
       {replacement ? <p className="small muted">{docs('replaceHelp')}</p> : null}
       <UploadForm key={replacement?.id ?? 'new'} detail={detail} command={command} replacement={replacement} onUploaded={() => setReplacementId(null)} />
+      </DeliveryDetailCard>
     </section> : null}
   </>;
 }
@@ -137,11 +151,11 @@ function UploadForm({ detail, command, replacement, onUploaded }: { detail: Deli
     onUploaded();
   }}>
     <Field label={t('file')} hint={t('fileHint')}><Input type="file" name="file" accept="application/pdf,image/png,image/jpeg,text/plain" required /></Field>
-    <Field label={t('kind')}><select name="kind" value={kind} disabled={Boolean(replacement)} onChange={(event) => setKind(event.currentTarget.value)}><option value="document">{t('operatorDocument')}</option><option value="photo">{t('operatorPhoto')}</option></select></Field>
-    {kind === 'document' ? <Field label={docs('purpose')}><select name="documentPurpose" defaultValue={replacement?.documentPurpose ?? 'general'}><option value="general">{docs('general')}</option><option value="instruction">{docs('instruction')}</option><option value="drawing">{docs('drawing')}</option></select></Field> : null}
-    <Field label={t('relatedVisit')}><select name="appointmentId" disabled={Boolean(replacement)} defaultValue={replacement?.appointmentId ?? ''}><option value="">{t('deliveryOnly')}</option>{detail.delivery.appointments.map((visit, index) => <option key={visit.id} value={visit.id}>{t('visitNumber', { number: index + 1 })} · {formatDateTime(visit.startsAt, locale)}</option>)}</select></Field>
-    <div className="form-grid"><Field label={t('relatedProduct')}><select name="itemId" disabled={Boolean(replacement)} defaultValue={replacement?.itemId ?? ''}><option value="">{t('none')}</option>{detail.delivery.source.items.map((item) => <option key={item.sourceLineId} value={item.sourceLineId}>{sourceLineLabel(detail.delivery.source, item, locale)}</option>)}</select></Field>
-      <Field label={t('relatedIssue')}><select name="issueId" disabled={Boolean(replacement)} defaultValue={replacement?.issueId ?? ''}><option value="">{t('none')}</option>{detail.delivery.issues.map((issue) => <option key={issue.id} value={issue.id}>{deliveryStatusLabel(t, issue.type)} · {issue.description.slice(0, 40)}</option>)}</select></Field></div>
+    <Field label={t('kind')}><Combobox name="kind" value={kind} disabled={Boolean(replacement)} onChange={(event) => setKind(event.currentTarget.value)}><option value="document">{t('operatorDocument')}</option><option value="photo">{t('operatorPhoto')}</option></Combobox></Field>
+    {kind === 'document' ? <Field label={docs('purpose')}><Combobox name="documentPurpose" defaultValue={replacement?.documentPurpose ?? 'general'}><option value="general">{docs('general')}</option><option value="instruction">{docs('instruction')}</option><option value="drawing">{docs('drawing')}</option></Combobox></Field> : null}
+    <Field label={t('relatedVisit')}><Combobox name="appointmentId" disabled={Boolean(replacement)} defaultValue={replacement?.appointmentId ?? ''}><option value="">{t('deliveryOnly')}</option>{detail.delivery.appointments.map((visit, index) => <option key={visit.id} value={visit.id}>{t('visitNumber', { number: index + 1 })} · {formatDateTime(visit.startsAt, locale)}</option>)}</Combobox></Field>
+    <div className="form-grid"><Field label={t('relatedProduct')}><Combobox name="itemId" disabled={Boolean(replacement)} defaultValue={replacement?.itemId ?? ''}><option value="">{t('none')}</option>{detail.delivery.source.items.map((item) => <option key={item.sourceLineId} value={item.sourceLineId}>{sourceLineLabel(detail.delivery.source, item, locale)}</option>)}</Combobox></Field>
+      <Field label={t('relatedIssue')}><Combobox name="issueId" disabled={Boolean(replacement)} defaultValue={replacement?.issueId ?? ''}><option value="">{t('none')}</option>{detail.delivery.issues.map((issue) => <option key={issue.id} value={issue.id}>{deliveryStatusLabel(t, issue.type)} · {issue.description.slice(0, 40)}</option>)}</Combobox></Field></div>
   </ActionForm>;
 }
 

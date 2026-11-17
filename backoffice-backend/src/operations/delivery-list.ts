@@ -4,6 +4,8 @@ import { DeliverySchema, IdSchema, InstantSchema, RemainingWorkEstimateSchema, V
 import { deriveProgress, deriveViews, remainingWorkEstimate } from '../domain/rules';
 import { areaBounds, areaQueryShape, DeliveryAreaSchema, pointInArea, validateAreaQuery } from './delivery-area';
 import type { EffectiveDeliveryPoint } from './delivery-points';
+import { deliveryActivity, deliveryActivityFacets, deliveryActivityQueryShape, DeliveryFilterFacetsSchema,
+  validateDeliveryActivityQuery, type DeliveryActivityQuery, type FilterCrew } from './delivery-view-filters';
 
 const DeliveryFilterQuerySchema = z.object({
   view: ViewSchema.optional(),
@@ -28,14 +30,18 @@ function validateGeographyFilterPairs(query: DeliveryFilterQuery, context: z.Ref
 }
 
 export const DeliveryListQuerySchema = DeliveryFilterQuerySchema.extend({
+  ...deliveryActivityQueryShape,
   page: z.coerce.number().int().min(1).max(500).default(1),
-}).superRefine(validateGeographyFilterPairs);
+}).superRefine((query, context) => {
+  validateGeographyFilterPairs(query, context);
+  validateDeliveryActivityQuery(query, context);
+});
 export const DeliveryMapQuerySchema = DeliveryFilterQuerySchema.extend({
   view: z.literal('inbox').default('inbox'),
 }).superRefine(validateGeographyFilterPairs);
 export type DeliveryListQuery = z.infer<typeof DeliveryListQuerySchema>;
 
-const GeographyFacetSchema = z.object({ value: z.string().nullable(), count: z.number().int().positive() }).strict();
+const GeographyFacetSchema = z.object({ value: z.string().nullable(), count: z.number().int().nonnegative() }).strict();
 export const GeographyFacetsSchema = z.object({
   cities: z.array(GeographyFacetSchema),
   provinces: z.array(GeographyFacetSchema),
@@ -59,6 +65,7 @@ export const DeliveryListSchema = z.object({
   counts: z.record(ViewSchema, z.number().int().nonnegative()),
   geographyFacets: GeographyFacetsSchema,
   matchingGeographyFacets: GeographyFacetsSchema,
+  filterFacets: DeliveryFilterFacetsSchema,
   area: DeliveryAreaSchema,
 });
 
@@ -73,18 +80,49 @@ function matchesGeography(value: DeliveryGeography, query: DeliveryFilterQuery):
     && matches(value.postalCode, query.postalCode, query.postalCodeMissing);
 }
 
-export function selectDeliveryList(all: readonly Delivery[], query: DeliveryFilterQuery, points?: ReadonlyMap<string, EffectiveDeliveryPoint>) {
-  const allViewItems = all.filter((delivery) => !query.view || deriveViews(delivery).includes(query.view))
+function matchesDeliverySearch(delivery: Delivery, search: string) {
+  if (!search) return true;
+  const { pickingName, customer, salesOrders, saleOrderName, saleOrderId } = delivery.source;
+  const orders = salesOrders ?? [{ name: saleOrderName, id: saleOrderId }];
+  return [pickingName, customer.name, saleOrderName, saleOrderId, ...orders.flatMap(({ name, id }) => [name, id])]
+    .some((field) => String(field ?? '').toLowerCase().includes(search));
+}
+
+export function selectDeliveryList(all: readonly Delivery[], query: DeliveryFilterQuery & DeliveryActivityQuery,
+  points?: ReadonlyMap<string, EffectiveDeliveryPoint>, crews: readonly FilterCrew[] = []) {
+  const view = query.view;
+  const allViewItems = all.filter((delivery) => !view || deriveViews(delivery).includes(view))
     .map((delivery) => ({ delivery, geography: deliveryGeography(delivery) }));
+  if (view && view !== 'inbox') {
+    const search = query.search?.trim().toLowerCase() ?? '';
+    const matches = allViewItems.filter(({ delivery }) => matchesDeliverySearch(delivery, search)).map((item) => ({
+      item,
+      activity: deliveryActivity(item.delivery, view, query),
+      matchesGeography: matchesGeography(item.geography, query),
+    }));
+    const matchingActivity = matches.filter(({ activity }) =>
+      activity.crewMatches && activity.dateMatches && activity.issueMatches && activity.returnMatches);
+    return {
+      filtered: matchingActivity.filter((match) => match.matchesGeography).map(({ item }) => item),
+      facetGeographies: matchingActivity.map(({ item }) => item.geography),
+      filterFacets: deliveryActivityFacets(matches.filter((match) => match.matchesGeography).map(({ activity }) => activity), crews),
+      area: null,
+    };
+  }
+
+  const search = query.search?.toLowerCase();
   const matchesQuery = ({ delivery, geography }: typeof allViewItems[number]) => matchesGeography(geography, query)
-    && (!query.search || [delivery.source.pickingName, delivery.source.customer.name, delivery.source.customer.city ?? '']
-      .join(' ').toLowerCase().includes(query.search.toLowerCase()));
+    && (!search || [delivery.source.pickingName, delivery.source.customer.name, delivery.source.customer.city ?? '']
+      .join(' ').toLowerCase().includes(search));
   const bounds = areaBounds(query);
   if (bounds && points === undefined) throw new Error('Area selection requires resolved delivery coordinates');
   const viewItems = bounds ? allViewItems.filter(({ delivery }) => pointInArea(points?.get(delivery.id), bounds)) : allViewItems;
   const filtered = viewItems.filter(matchesQuery);
   const area = bounds ? { bounds, excludedMissingCoordinates: allViewItems.filter((item) => matchesQuery(item) && !points?.has(item.delivery.id)).length } : null;
-  return { viewItems, filtered, area };
+  return {
+    filtered, area, facetGeographies: viewItems.map(({ geography }) => geography),
+    filterFacets: { crews: [], issueTypes: [], returnStatuses: [] },
+  };
 }
 
 export function deliveryPlanning(delivery: Delivery): z.infer<typeof DeliveryPlanningSchema> {
@@ -97,10 +135,14 @@ export function deliveryPlanning(delivery: Delivery): z.infer<typeof DeliveryPla
   return { status: deriveProgress(delivery), activeVisits, remainingWorkEstimate: remainingWorkEstimate(delivery) };
 }
 
+type GeographyFacet = z.infer<typeof GeographyFacetSchema>;
+
+function geographyKey(value: string | null) { return value?.toLowerCase() ?? null; }
+
 function facets(values: (string | null)[]) {
-  const counts = new Map<string | null, { value: string | null; count: number }>();
+  const counts = new Map<string | null, GeographyFacet>();
   for (const value of values) {
-    const key = value?.toLowerCase() ?? null;
+    const key = geographyKey(value);
     const existing = counts.get(key);
     if (existing) existing.count++;
     else counts.set(key, { value, count: 1 });
@@ -119,6 +161,21 @@ export function geographyFacets(values: readonly DeliveryGeography[], query: Del
     cities: facets(values.map(({ city }) => city)),
     provinces: facets(cityMatches.map(({ province }) => province)),
     postalCodes: facets(provinceMatches.map(({ postalCode }) => postalCode)),
+  };
+}
+
+function withScopedCounts(choices: GeographyFacet[], scoped: GeographyFacet[]): GeographyFacet[] {
+  const counts = new Map(scoped.map(({ value, count }) => [geographyKey(value), count]));
+  return choices.map(({ value }) => ({ value, count: counts.get(geographyKey(value)) ?? 0 }));
+}
+
+export function operationalGeographyFacets(catalogue: readonly DeliveryGeography[], scoped: readonly DeliveryGeography[], query: DeliveryFilterQuery) {
+  const choices = geographyFacets(catalogue, query);
+  const counts = geographyFacets(scoped, query);
+  return {
+    cities: withScopedCounts(choices.cities, counts.cities),
+    provinces: withScopedCounts(choices.provinces, counts.provinces),
+    postalCodes: withScopedCounts(choices.postalCodes, counts.postalCodes),
   };
 }
 

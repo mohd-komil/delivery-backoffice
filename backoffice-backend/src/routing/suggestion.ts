@@ -1,4 +1,6 @@
 import type { Delivery } from '../domain/model';
+import { resolveRouteCalendar } from '../planning/calendar';
+import type { RouteCalendar, RouteCalendarEntry } from '../planning/calendar-contracts';
 import { calculateRouteTimeline, type RouteTimelineInput } from './calculation';
 import { directedRoutePair, type RouteDraftInput, type RoutePointContext, type RoutePointCoordinates, type RouteTravelEstimate } from './contracts';
 import { getDemoRouteEstimates, getLocalDemoRouteEstimates } from './demo-estimates';
@@ -11,12 +13,14 @@ type Preview = {
   pointContexts: (RoutePointContext & { pointId: string })[];
   warnings: z.infer<typeof RouteWarningSchema>[]; road?: RouteRoad;
   feasibility: ReturnType<typeof assessRoute>;
+  calendar?: RouteCalendar;
 };
 export type PreparedRoute = {
   preview: Preview; stops: RouteTimelineInput['stops']; selected: Delivery[];
   resources: RouteResources; work: RouteWorkAssessment[];
   coordinates: ReadonlyMap<string, RoutePointCoordinates>;
   manualEstimates: RouteTravelEstimate[]; extraFindings: RouteFinding[];
+  calendarEntries?: RouteCalendarEntry[];
 };
 
 /** Bounded pair-swap search over the same directed matrix. Never mutates or saves a draft. */
@@ -31,7 +35,7 @@ export function suggestRouteOrder(input: RouteDraftInput, objective: 'travel_min
     if (manualOnly) {
       const estimate = manual.get(directedRoutePair(from, to));
       if (estimate) matrix.push(estimate);
-    } else matrix.push(...(input.useLocalEstimates ? getLocalDemoRouteEstimates([from, to], prepared.coordinates) : getDemoRouteEstimates([from, to])));
+    } else matrix.push(...(input.useLocalEstimates ? getLocalDemoRouteEstimates([from, to], prepared.coordinates) : getDemoRouteEstimates([from, to], prepared.coordinates)));
   }
   const assess = (stops: RouteTimelineInput['stops']): Preview => {
     const byId = new Map(input.stops.map((stop) => [stop.deliveryId, stop]));
@@ -40,9 +44,12 @@ export function suggestRouteOrder(input: RouteDraftInput, objective: 'travel_min
       return stop ? [stop] : [];
     });
     const timeline = calculateRouteTimeline({ ...input, stops, travelEstimates: matrix });
+    const resolved = resolveRouteCalendar({ ...input, stops: ordered }, timeline, prepared.calendarEntries ?? []);
     return {
       ...prepared.preview, road: undefined, timeline,
-      feasibility: assessRoute({ ...input, stops: ordered }, timeline, prepared.selected, prepared.resources, prepared.work, prepared.extraFindings, prepared.preview.pointContexts),
+      ...(resolved.calendar ? { calendar: resolved.calendar } : {}),
+      feasibility: assessRoute(resolved.input, timeline, prepared.selected,
+        { ...prepared.resources, ...(resolved.calendar ? { calendar: resolved.calendar } : {}) }, prepared.work, prepared.extraFindings, prepared.preview.pointContexts),
     };
   };
   const current = assess(prepared.stops);

@@ -6,6 +6,7 @@ import { DeliveryMapQuerySchema, selectDeliveryList } from '../operations/delive
 import { DeliveryStore } from '../operations/store';
 import { DeliveryAreaSchema } from '../operations/delivery-area';
 import { DeliveryPoints } from '../operations/delivery-points';
+import { GeocodingMetadataSchema } from './geocoding-contracts';
 
 const DeliveryMapJobSchema = z.object({
   deliveryId: IdSchema,
@@ -17,7 +18,8 @@ const DeliveryMapJobSchema = z.object({
 }).strict();
 export const DeliveryMapMarkerSchema = DeliveryMapJobSchema.extend({
   point: GeoPointSchema,
-  pointSource: z.enum(['confirmed_entrance', 'reference']),
+  pointSource: z.enum(['confirmed_entrance', 'geocoded', 'reference']),
+  geocoding: GeocodingMetadataSchema.optional(),
 });
 export const DeliveryMapSchema = z.object({
   total: z.number().int().nonnegative(),

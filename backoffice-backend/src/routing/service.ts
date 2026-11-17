@@ -7,11 +7,12 @@ import { destinationAddressKey } from '../domain/destination-address';
 import { IdSchema, InstantSchema, type Delivery, type OperatorActor } from '../domain/model';
 import { appointmentScopeReviewReason, customerConfirmationStatus, estimateWorkMinutes, lineServiceStatuses } from '../domain/rules';
 import { Participants } from '../operations/participants';
+import type { EffectiveDeliveryPoint } from '../operations/delivery-points';
 import { DeliveryStore } from '../operations/store';
 import { Vehicles } from '../operations/vehicles';
 import { RESOURCE_BOOKINGS_SQL } from '../operations/route-reservations';
 import { calculateRouteTimeline, distanceKm, type RouteTimelineInput } from './calculation';
-import { directedRoutePair, RouteDraftInputSchema, type RouteDraftInput, type RoutePointContext, type RoutePointCoordinates, type RouteTravelEstimate } from './contracts';
+import { directedRoutePair, RouteDraftInputSchema, withoutRouteDriver, type RouteDraftInput, type RoutePointContext, type RoutePointCoordinates, type RouteTravelEstimate } from './contracts';
 import { getDemoRouteEstimates, getLocalDemoRouteEstimates, routeDepots } from './demo-estimates';
 import { DestinationEntrances } from './entrances';
 import { GoogleRoads } from './google-maps';
@@ -19,6 +20,10 @@ import { MAX_GOOGLE_ROUTE_STOPS, RoadRouteError } from './google-routes';
 import { RouteJobsQuerySchema, type RouteJob, type RouteRoad, type RouteWarningSchema } from './http-contracts';
 import { assessRoute, type RouteFinding, type RouteResources, type RouteWorkAssessment } from './feasibility';
 import { suggestRouteOrder } from './suggestion';
+import { locationPlanningProblems, locationPoint, locationPointContext, PlanningLocations } from '../planning/locations';
+import { PlanningCalendar, resolveRouteCalendar } from '../planning/calendar';
+import type { RouteCalendar } from '../planning/calendar-contracts';
+import type { RouteLocations } from '../planning/location-contracts';
 
 const RouteDraftRowSchema = z.object({
   id: IdSchema,
@@ -33,7 +38,6 @@ const draftColumns = 'id, version, data, create_fingerprint AS "createFingerprin
 const DraftSummaryRowSchema = RouteDraftRowSchema.pick({ id: true, version: true, updatedAt: true }).extend({
   name: z.string(), departAt: InstantSchema, stopCount: z.number().int().nonnegative(),
 });
-const depotIds = new Set(routeDepots.map(({ id }) => id));
 
 function bookedVisits(delivery: Delivery) {
   return delivery.appointments.filter(({ status }) => status === 'booked');
@@ -48,7 +52,8 @@ function scopeNeedsReview(delivery: Delivery, appointment: Delivery['appointment
   return reason !== null && reason !== 'stock_pending';
 }
 
-export function routeJob(delivery: Delivery, entrance?: RoutePointCoordinates, appointmentId?: string): RouteJob {
+export function routeJob(delivery: Delivery, entrance?: RoutePointCoordinates, appointmentId?: string,
+  addressPoint?: Pick<EffectiveDeliveryPoint, 'point' | 'geocoding'>): RouteJob {
   const { source } = delivery;
   const itemsById = new Map(source.items.map((item) => [item.sourceLineId, item]));
   const ordersById = new Map((source.salesOrders ?? [{ id: source.saleOrderId, name: source.saleOrderName }])
@@ -83,14 +88,21 @@ export function routeJob(delivery: Delivery, entrance?: RoutePointCoordinates, a
   const selectable = remaining.length > 0 || (!appointmentId && appointmentOptions.some(({ needsReview }) => !needsReview));
   const unavailable = !address || !selectable || (appointmentId && workReviewReason !== null && workReviewReason !== 'stock_pending') || delivery.sourceReview || delivery.completedAt !== null
     || delivery.appointments.some(({ status }) => status === 'in_progress');
+  const selectedLineIds = new Set(selectedWork.filter(({ deliveryMilli, installationMilli, collectionMilli }) => deliveryMilli + installationMilli + collectionMilli > 0)
+    .map(({ sourceLineId }) => sourceLineId));
+  const workTimes = delivery.servicePlan?.timeEstimates?.filter(({ sourceLineId }) => selectedLineIds.has(sourceLineId))
+    .map(({ sourceLineId, context, deliveryMinutesPerUnit, installationMinutesPerUnit, collectionMinutesPerUnit }) =>
+      ({ sourceLineId, context, deliveryMinutesPerUnit, installationMinutesPerUnit, collectionMinutesPerUnit })).sort((a, b) => a.sourceLineId - b.sourceLineId);
   return {
     deliveryId: delivery.id, pickingName: source.pickingName, orderNames: [...ordersById.values()],
-    customerName: source.customer.name, address, city: source.customer.city, addressKey, point: entrance ?? delivery.routePoint ?? null,
+    customerName: source.customer.name, address, city: source.customer.city, addressKey, point: entrance ?? addressPoint?.point ?? delivery.routePoint ?? null,
     entranceConfirmed: entrance !== undefined,
+    ...(!entrance && addressPoint?.geocoding ? { geocoding: addressPoint.geocoding } : {}),
     distanceKm: null, suggestedWorkMinutes: minutes(estimate.minutes),
     remainingWorkEstimate: estimate,
     remaining,
-    workFingerprint: createHash('sha256').update(JSON.stringify({ source: delivery.source, addressKey, remaining, workReviewReason, appointmentId: appointmentId ?? null })).digest('hex'),
+    workFingerprint: createHash('sha256').update(JSON.stringify({ source: delivery.source, addressKey, remaining, workReviewReason, appointmentId: appointmentId ?? null,
+      ...(workTimes?.length ? { workTimes } : {}) })).digest('hex'),
     workBasis: appointmentId ? 'appointment' : 'available_remaining', appointmentId: appointmentId ?? null,
     hasAvailableRemaining: availableWork.some(({ deliveryMilli, installationMilli, collectionMilli }) => deliveryMilli + installationMilli + collectionMilli > 0),
     workReviewReason, appointmentOptions,
@@ -112,7 +124,7 @@ function sameContext(left: RoutePointContext, right: RoutePointContext | undefin
     && left.point?.latitude === right.point?.latitude && left.point?.longitude === right.point?.longitude;
 }
 
-export function normalizeRouteDraftInput(input: RouteDraftInput): RouteDraftInput {
+function normalizeRouteIdentifiers(input: RouteDraftInput): RouteDraftInput {
   return RouteDraftInputSchema.parse({
     ...input,
     departAt: new Date(input.departAt).toISOString(),
@@ -134,6 +146,10 @@ export function normalizeRouteDraftInput(input: RouteDraftInput): RouteDraftInpu
   });
 }
 
+export function normalizeRouteDraftInput(input: RouteDraftInput): RouteDraftInput {
+  return withoutRouteDriver(normalizeRouteIdentifiers(input));
+}
+
 @Injectable()
 export class RouteDrafts {
   constructor(
@@ -142,6 +158,8 @@ export class RouteDrafts {
     @Inject(Vehicles) private readonly vehicles: Vehicles,
     @Inject(GoogleRoads) private readonly googleRoads: GoogleRoads,
     @Inject(DestinationEntrances) private readonly entrances: DestinationEntrances,
+    @Inject(PlanningLocations) private readonly locations: PlanningLocations,
+    @Inject(PlanningCalendar) private readonly calendar: PlanningCalendar,
   ) {}
 
   async list() {
@@ -155,15 +173,21 @@ export class RouteDrafts {
       ORDER BY "updatedAt" DESC,d.id LIMIT 100`);
     return {
       drafts: drafts.map((draft) => ({ ...draft, updatedAt: draft.updatedAt.toISOString() })),
-      points: routeDepots, googleMaps: this.googleRoads.browserConfig, roadRoutingEnabled: this.googleRoads.configured,
+      points: (await this.locations.list()).locations.flatMap((location) => {
+        const point = locationPoint(location);
+        return location.enabled && point ? [{ id: location.id, name: location.name, ...point }] : [];
+      }), googleMaps: this.googleRoads.browserConfig, roadRoutingEnabled: this.googleRoads.configured,
     };
   }
 
   async jobs(input: unknown) {
     const query = RouteJobsQuerySchema.parse(input);
     const deliveries = await this.store.all();
-    const entrances = await this.entrances.pointsFor(deliveries);
-    const available = deliveries.map((delivery) => routeJob(delivery, entrances.get(delivery.id)))
+    const points = await this.entrances.effectivePointsFor(deliveries);
+    const available = deliveries.map((delivery) => {
+      const effective = points.get(delivery.id);
+      return routeJob(delivery, effective?.pointSource === 'confirmed_entrance' ? effective.point : undefined, undefined, effective);
+    })
       .filter((job) => job.planningStatus !== 'unavailable');
     const search = query.search?.toLowerCase() ?? '';
     const matching = available.filter((job) => [job.pickingName, job.customerName, job.address, job.city, ...job.orderNames]
@@ -186,7 +210,8 @@ export class RouteDrafts {
   async get(id: string) {
     const draft = await this.find(this.store.db.source.manager, id);
     if (!draft) throw new NotFoundException('Route draft not found');
-    return this.detail(draft, await this.evaluate(draft.data, this.store.db.source.manager, false));
+    const data = withoutRouteDriver(draft.data);
+    return this.detail({ ...draft, data }, await this.evaluate(data, this.store.db.source.manager, false));
   }
 
   async preview(input: RouteDraftInput, useGoogleRoads = false) {
@@ -198,6 +223,30 @@ export class RouteDrafts {
     return this.prepare(normalizeRouteDraftInput(input), manager, true, false, deliveries, ownRouteId);
   }
 
+  async calendarDepartureBlocker(manager: EntityManager, input: RouteDraftInput, timeline: { departAt: string; returnAt: string | null }, frozen?: RouteCalendar) {
+    if (input.planning?.availabilityMode !== 'shared_calendar') return null;
+    const current = await this.calendar.currentSnapshot(manager, input, timeline);
+    if (!frozen || JSON.stringify(current) !== JSON.stringify(frozen)) return {
+      code: 'ROUTE_CALENDAR_REVIEW_REQUIRED', message: 'Participant calendar entries changed. Review and amend the route before departure.',
+    };
+    return null;
+  }
+
+  async locationDepartureBlocker(manager: EntityManager, input: RouteDraftInput, frozen?: RouteLocations) {
+    const current = await this.locations.route(manager, input.startPointId, input.endPointId);
+    const problem = locationPlanningProblems(current)[0];
+    if (problem) return { code: 'ROUTE_LOCATION_REVIEW_REQUIRED', message: problem.message };
+    for (const side of ['start', 'end'] as const) {
+      const expected = frozen?.[side];
+      const actual = current[side];
+      // Legacy publications used only the original four constants; migration preserves them at revision 1.
+      const unchanged = expected ? actual.id === expected.id && actual.version === expected.version
+        : actual.version === 1 && routeDepots.some(({ id }) => id === actual.id);
+      if (!unchanged) return { code: 'ROUTE_LOCATION_REVIEW_REQUIRED', message: 'A departure or return location changed. Review and amend the route before departure.' };
+    }
+    return null;
+  }
+
   async suggest(input: RouteDraftInput, objective: 'travel_minutes' | 'return_time') {
     const command = normalizeRouteDraftInput(input);
     return this.store.db.source.transaction('REPEATABLE READ', async (manager) => {
@@ -207,17 +256,19 @@ export class RouteDrafts {
   }
 
   async create(requestId: string, input: RouteDraftInput, principal: OperatorActor) {
-    const command = normalizeRouteDraftInput(input);
-    // Preserve idempotent retries for existing drafts written before the additive opt-in field.
-    const { useLocalEstimates, ...legacyCommand } = command;
-    const fingerprint = createHash('sha256').update(JSON.stringify(useLocalEstimates ? command : legacyCommand)).digest('hex');
+    const normalized = normalizeRouteIdentifiers(input);
+    const command = withoutRouteDriver(normalized);
+    // Preserve idempotent retries from older clients, including drafts that recorded a driver.
+    const { useLocalEstimates, ...legacyCommand } = normalized;
+    const fingerprint = createHash('sha256').update(JSON.stringify(useLocalEstimates ? normalized : legacyCommand)).digest('hex');
     return this.store.db.source.transaction(async (manager) => {
       // Follow the scheduling lock so the validated delivery state cannot change during the save.
       await manager.query('SELECT pg_advisory_xact_lock(7041001)');
       const existing = await this.find(manager, requestId);
       if (existing) {
         if (existing.createFingerprint !== fingerprint) throw new ConflictException('Request ID reused with different input');
-        return this.detail(existing, await this.evaluate(existing.data, manager, false));
+        const data = withoutRouteDriver(existing.data);
+        return this.detail({ ...existing, data }, await this.evaluate(data, manager, false));
       }
       const preview = await this.evaluateForSave(command, manager);
       const [created] = await rows(manager, RouteDraftRowSchema,
@@ -279,27 +330,28 @@ export class RouteDrafts {
   private async prepare(input: RouteDraftInput, manager: EntityManager, validate: boolean, useGoogleRoads = false, projectedDeliveries?: Delivery[], ownRouteId?: string) {
     const chain = [input.startPointId, ...input.stops.map(({ deliveryId }) => deliveryId), input.endPointId];
     const nodes = new Set(chain);
-    if (!depotIds.has(input.startPointId) || !depotIds.has(input.endPointId)) {
-      throw new BadRequestException('Choose a known departure and return depot');
-    }
+    const locations = await this.locations.route(manager, input.startPointId, input.endPointId);
     if (input.manualEstimates.some(({ fromPointId, toPointId }) => !nodes.has(fromPointId) || !nodes.has(toPointId))) {
       throw new BadRequestException('Manual travel estimates must link stops or depots in this draft');
     }
     const selected = projectedDeliveries ?? await this.store.getMany(input.stops.map(({ deliveryId }) => deliveryId), manager);
     const deliveries = new Map(selected.map((delivery) => [delivery.id, delivery]));
-    const entrances = await this.entrances.pointsFor(selected, manager);
+    const points = await this.entrances.effectivePointsFor(selected, manager);
     const jobs: RouteJob[] = [];
     const work: RouteWorkAssessment[] = [];
-    const coordinates = new Map<string, RoutePointCoordinates>(routeDepots.map(({ id, latitude, longitude }) => [id, { latitude, longitude }]));
+    const coordinates = new Map<string, RoutePointCoordinates>();
     const contexts = new Map<string, RoutePointContext>();
-    for (const pointId of [input.startPointId, input.endPointId]) {
-      contexts.set(pointId, { point: coordinates.get(pointId) ?? null, addressKey: null });
+    for (const location of [locations.start, locations.end]) {
+      const context = locationPointContext(location);
+      if (context.point) coordinates.set(location.id, context.point);
+      contexts.set(location.id, context);
     }
     const stops = input.stops.map((stop) => {
       const delivery = deliveries.get(stop.deliveryId);
       if (!delivery) throw new NotFoundException('A route stop no longer exists');
-      const entrance = entrances.get(stop.deliveryId);
-      const job = routeJob(delivery, entrance, stop.appointmentId);
+      const effective = points.get(stop.deliveryId);
+      const entrance = effective?.pointSource === 'confirmed_entrance' ? effective.point : undefined;
+      const job = routeJob(delivery, entrance, stop.appointmentId, effective);
       if (validate && (job.planningStatus === 'unavailable' || job.remaining.length === 0)) {
         throw new ConflictException(stop.appointmentId ? 'Review the selected appointment work before planning this route stop'
           : 'No unreserved work is available. Select a reviewed appointment or update the delivery work plan');
@@ -330,21 +382,27 @@ export class RouteDrafts {
     const road = useGoogleRoads && input.stops.length ? await this.roadEstimates(chain, coordinates) : undefined;
     const travelEstimates: RouteTimelineInput['travelEstimates'] = [
       ...(road?.estimates ?? []),
-      ...(input.useLocalEstimates ? getLocalDemoRouteEstimates(chain, coordinates) : getDemoRouteEstimates(chain)),
+      ...(input.useLocalEstimates ? getLocalDemoRouteEstimates(chain, coordinates) : getDemoRouteEstimates(chain, coordinates)),
       ...manualEstimates,
     ];
     const timeline = calculateRouteTimeline({ ...input, stops, travelEstimates });
+    const calendarEntries = await this.calendar.routeEntries(manager, input, timeline.returnAt);
+    const resolved = resolveRouteCalendar(input, timeline, calendarEntries);
     const resources = await this.resources(manager, input);
+    if (resolved.calendar) resources.calendar = resolved.calendar;
+    resources.locationRevisions = [...new Map([locations.start, locations.end].map(({ id, version }) => [id, { id, version }])).values()];
     if (ownRouteId) resources.busy = resources.busy.filter(({ routeId }) => routeId !== ownRouteId);
     const extraFindings: RouteFinding[] = warnings.map(({ code, fromPointId, toPointId }) => ({ severity: 'unknown', code, message: `Review travel estimate ${fromPointId} → ${toPointId}; its address context is missing or changed.` }));
+    extraFindings.push(...locationPlanningProblems(locations).map((problem) => ({ severity: 'unknown' as const, ...problem })));
     const pointContexts = [...contexts].map(([pointId, context]) => ({ pointId, ...context }));
     const preview = {
-      timeline, jobs,
+      ...(resolved.calendar ? { calendar: resolved.calendar } : {}),
+      timeline, jobs, locations,
       pointContexts, warnings,
       ...(road ? { road: road.status } : {}),
-      feasibility: assessRoute(input, timeline, selected, resources, work, extraFindings, pointContexts),
+      feasibility: assessRoute(resolved.input, timeline, selected, resources, work, extraFindings, pointContexts),
     };
-    return { preview, stops, selected, resources, work, coordinates, manualEstimates, extraFindings };
+    return { preview, stops, selected, resources, work, coordinates, manualEstimates, extraFindings, calendarEntries };
   }
 
   private async resources(manager: EntityManager, input: RouteDraftInput): Promise<RouteResources> {

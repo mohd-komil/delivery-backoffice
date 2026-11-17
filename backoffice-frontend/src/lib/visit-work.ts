@@ -16,7 +16,7 @@ export function workCapacity(line: LineService, operation: WorkOperation, scope?
 }
 
 export function workLineBlocked(line: LineService, editing: boolean): boolean {
-  return line.service === null || line.planningBlockedReason === 'source_review' || line.planningBlockedReason === 'damage_hold' || (!editing && line.planningBlockedReason !== null);
+  return line.service === null || line.planningBlockedReason === 'source_review' || line.planningBlockedReason === 'damage_hold' || line.planningBlockedReason === 'prior_work_review' || (!editing && line.planningBlockedReason !== null);
 }
 
 export function initialWorkDrafts(lines: readonly LineService[], scope?: WorkScope, editing = false): WorkDraft[] {

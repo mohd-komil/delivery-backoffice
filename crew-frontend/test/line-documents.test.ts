@@ -25,7 +25,8 @@ void test('standalone issue product options and Finish condition names identify 
     const finish=renderLocalized(createElement(FinishItems,{items,error:null,clearError:()=>undefined}),locale);
     for(const [line,order] of [[31,'ORDER A'],[32,'ORDER B']] as const){
       assert.match(issues,new RegExp(`<option value="${line}">Identical chair · ${order} · [^<]*${line}[^<]*</option>`));
-      assert.match(finish,new RegExp(`aria-label="Identical chair · ${order} · [^"]*${line}[^\"]*" name="check-status-${line}"`));
+      assert.match(finish,new RegExp(`<button[^>]*role="combobox"[^>]*aria-label="Identical chair · ${order} · [^"]*${line}[^"]*"`));
+      assert.match(finish,new RegExp(`<select[^>]*name="check-status-${line}"[^>]*data-combobox-native`));
     }
     assert.doesNotMatch(issues,/MISSING_MESSAGE|undefined/);
   }

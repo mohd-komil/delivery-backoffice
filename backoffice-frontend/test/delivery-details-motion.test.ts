@@ -54,7 +54,11 @@ void test('reduced-motion preference removes panel and scheduling translation wh
     const visits = button(document, 'Visits & tasks'); visits.focus(); assert.strictEqual(document.activeElement, visits); await click(visits);
     assert.equal(visits.getAttribute('aria-pressed'), 'true');
     const trigger = button(document, 'Manage assignment, reschedule or cancel ↓'); trigger.focus(); assert.strictEqual(document.activeElement, trigger); await click(trigger);
-    untranslated(await animationFrames('.visit-editor')); assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+    const scheduling = document.querySelector('.visit-editor');
+    assert.ok(scheduling instanceof page.dom.window.HTMLElement);
+    assert.equal(scheduling.getAttribute('role'), 'dialog');
+    assert.ok(scheduling.contains(document.activeElement), 'Opening scheduling moves focus into its modal');
+    assert.equal(trigger.getAttribute('aria-expanded'), 'true');
     await click(button(document, 'Hide scheduling actions ↑')); assert.equal(trigger.getAttribute('aria-expanded'), 'false');
     assert.ok(panelFrames.length > 0);
     await act(async () => { trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); });

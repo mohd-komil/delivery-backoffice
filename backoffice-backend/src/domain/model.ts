@@ -13,13 +13,18 @@ export const GeoPointSchema = z.object({
 export const SourceItemSchema = z.object({
   sourceLineId: z.number().int().positive(),
   saleOrderId: z.number().int().positive().optional(),
+  // Optional source provenance; physical work remains keyed by stock_move.id (sourceLineId).
+  saleOrderLineId: z.number().int().positive().nullable().optional(),
+  orderLinkBasis: z.enum(['sale_order_line', 'procurement_group']).optional(),
   productId: z.number().int().positive(),
+  sku: z.string().max(200).nullable().optional(),
   name: TextSchema,
   description: NullableTextSchema,
   quantity: z.number().nonnegative().max(1_000_000).refine((value) =>
     Math.abs(value * 1000 - Math.round(value * 1000)) < 0.000001,
   'Quantity supports at most three decimal places'),
   uom: TextSchema,
+  uomId: z.number().int().positive().optional(),
   configuration: NullableTextSchema,
   ambient: NullableTextSchema,
   notes: NullableTextSchema,
@@ -40,7 +45,10 @@ export const SourceSchema = z.object({
     id: z.number().int().positive(),
     name: TextSchema,
     address: NullableTextSchema,
+    addressSource: z.enum(['picking', 'move_order_shipping']).optional(),
     city: NullableTextSchema,
+    postalCode: z.string().max(20).nullable().optional(),
+    province: z.string().max(100).nullable().optional(),
     country: NullableTextSchema,
     phones: z.array(TextSchema).max(10),
     email: z.string().email().nullable(),
@@ -64,6 +72,27 @@ export const SourceSchema = z.object({
   }
 });
 export type SourceSnapshot = z.infer<typeof SourceSchema>;
+
+export const SourceRevisionRowSchema = z.object({
+  entity: z.string().regex(/^[a-z_]+$/).max(80), id: z.number().int().positive(),
+  writeDate: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/).nullable(),
+  rowHash: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
+export const SourceEvidenceSchema = z.object({ rows: z.array(SourceRevisionRowSchema).max(10000), readComplete: z.boolean() }).strict();
+export const SourceCandidateSchema = z.object({
+  id: IdSchema, hash: z.string().regex(/^[a-f0-9]{64}$/), firstSeenAt: InstantSchema,
+  source: SourceSchema.nullable(), qualifies: z.boolean(), evidence: SourceEvidenceSchema,
+  reasons: z.array(z.string().max(100)).max(20),
+}).strict();
+export const SourceImportStateSchema = z.object({
+  acceptedHash: z.string().regex(/^[a-f0-9]{64}$/), acceptedEvidence: SourceEvidenceSchema,
+  pending: SourceCandidateSchema.nullable(), keptHash: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  keptEvidence: SourceEvidenceSchema.nullable(), lastRejectedHash: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  eligible: z.boolean(), acceptedEligible: z.boolean(),
+}).strict();
+export type SourceEvidence = z.infer<typeof SourceEvidenceSchema>;
+export type SourceCandidate = z.infer<typeof SourceCandidateSchema>;
+export type SourceImportState = z.infer<typeof SourceImportStateSchema>;
 
 export const InstructionsSchema = z.object({
   floor: z.number().int().min(-10).max(200).nullable(),
@@ -132,7 +161,7 @@ export const TransportDriverSnapshotSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('participant'), person: PersonSnapshotSchema }).strict(),
   z.object({ kind: z.literal('external'), name: VehicleNameSchema, phone: z.string().trim().min(1).max(200) }).strict(),
 ]);
-const OperatorSnapshotSchema = z.object({ id: IdSchema, name: TextSchema }).strict();
+export const OperatorSnapshotSchema = z.object({ id: IdSchema, name: TextSchema }).strict();
 export const TransportAllocationSchema = z.object({
   id: IdSchema, vehicle: VehicleSnapshotSchema, driver: TransportDriverSnapshotSchema,
   reserveFrom: InstantSchema, reserveTo: InstantSchema,
@@ -171,11 +200,50 @@ export function mappedSourceService(value: SourceSnapshot['serviceType']): Servi
   return null;
 }
 const WorkMilliSchema = z.number().int().min(0).max(1_000_000_000);
+const OperationQuantitiesSchema = z.object({
+  deliveryMilli: WorkMilliSchema,
+  installationMilli: WorkMilliSchema,
+  collectionMilli: WorkMilliSchema,
+}).strict();
+export const RequiredWorkInputSchema = z.object({
+  sourceLineId: SourceItemSchema.shape.sourceLineId,
+  quantities: OperationQuantitiesSchema.nullable(),
+  reason: TextSchema,
+}).strict();
+export type RequiredWorkInput = z.infer<typeof RequiredWorkInputSchema>;
+
+const LineRequiredQuantitiesSchema = RequiredWorkInputSchema.extend({
+  quantities: OperationQuantitiesSchema,
+  updatedAt: InstantSchema,
+  updatedBy: OperatorSnapshotSchema,
+});
 export const QuantityResultSchema = z.object({
   sourceLineId: z.number().int().positive(),
   deliveredMilli: WorkMilliSchema,
   installedMilli: WorkMilliSchema.optional(),
   collectedMilli: WorkMilliSchema.optional(),
+}).strict();
+export const PriorWorkRevisionSchema = z.object({
+  id: IdSchema, revision: z.number().int().positive(),
+  sourceLineId: SourceItemSchema.shape.sourceLineId,
+  pickingId: z.number().int().positive(), pickingName: TextSchema,
+  saleOrderId: z.number().int().positive(), saleOrderName: TextSchema,
+  sourceItem: SourceItemSchema, service: ServiceTypeSchema,
+  deliveredMilli: WorkMilliSchema, installedMilli: WorkMilliSchema, collectedMilli: WorkMilliSchema,
+  sourceReference: TextSchema, reason: TextSchema, acknowledgeCurrentPicking: z.literal(true),
+  confirmedAt: InstantSchema, confirmedBy: OperatorSnapshotSchema,
+}).strict();
+export type PriorWorkRevision = z.infer<typeof PriorWorkRevisionSchema>;
+export const PriorWorkStatusSchema = z.object({
+  reviewRequired: z.boolean(),
+  lines: z.array(z.object({
+    sourceLineId: SourceItemSchema.shape.sourceLineId,
+    status: z.enum(['unknown', 'confirmed', 'needs_review']), canEdit: z.boolean(),
+    blockedReason: z.enum(['delivery_closed', 'source_review', 'unknown_service', 'line_removed', 'planned_work', 'recorded_work']).nullable(),
+    priorDeliveredMilli: WorkMilliSchema, priorInstalledMilli: WorkMilliSchema, priorCollectedMilli: WorkMilliSchema,
+    crewDeliveredMilli: WorkMilliSchema, crewInstalledMilli: WorkMilliSchema, crewCollectedMilli: WorkMilliSchema,
+    current: PriorWorkRevisionSchema.nullable(),
+  }).strict()).max(1000),
 }).strict();
 export const IssueTypeSchema = z.enum(['damage', 'missing_parts', 'access', 'other']);
 export const ItemChecksSchema = z.array(z.object({
@@ -200,16 +268,46 @@ export const IncompleteWorkSchema = z.array(z.object({
   'Explain the other reason for incomplete work')).max(1500).refine(
   (entries) => new Set(entries.map(({ sourceLineId, operation }) => `${sourceLineId}:${operation}`)).size === entries.length,
   'Report each incomplete source-line operation once');
+export const WorkTimeRatesSchema = z.object({
+  deliveryMinutesPerUnit: z.number().int().min(1).max(1440).nullable(),
+  installationMinutesPerUnit: z.number().int().min(1).max(1440).nullable(),
+  collectionMinutesPerUnit: z.number().int().min(1).max(1440).nullable(),
+}).strict();
+export type WorkTimeRates = z.infer<typeof WorkTimeRatesSchema>;
+export const WorkTimeStandardSnapshotSchema = z.object({
+  id: IdSchema, version: z.number().int().positive(), name: z.string().trim().min(1).max(200),
+  service: ServiceTypeSchema, unit: z.string().trim().min(1).max(80),
+  category: z.string().trim().min(1).max(200).nullable(), rates: WorkTimeRatesSchema,
+  basis: z.literal('elapsed_team_minutes'), assumptions: z.string().max(2000),
+  exclusions: z.string().max(2000), examples: z.string().max(2000), sourceReference: z.string().trim().min(1).max(2000),
+}).strict();
+export const LineWorkTimeSchema = WorkTimeRatesSchema.extend({
+  sourceLineId: QuantityResultSchema.shape.sourceLineId,
+  context: z.object({ productId: z.number().int().positive(), saleOrderId: z.number().int().positive(),
+    uom: z.string(), uomId: z.number().int().positive().nullable(), addressKey: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+  updatedAt: InstantSchema, updatedBy: OperatorSnapshotSchema,
+  timeStandard: WorkTimeStandardSnapshotSchema.optional(),
+}).strict();
+export type LineWorkTime = z.infer<typeof LineWorkTimeSchema>;
 export const ServicePlanSchema = z.object({
   defaultService: ServiceTypeSchema.nullable(),
-  overrides: z.array(z.object({ sourceLineId: QuantityResultSchema.shape.sourceLineId, service: ServiceTypeSchema }).strict()).max(500),
+  defaultOrigin: z.enum(['source', 'local']).optional(),
+  overrides: z.array(z.object({ sourceLineId: QuantityResultSchema.shape.sourceLineId, service: ServiceTypeSchema,
+    origin: z.enum(['source', 'local']).optional() }).strict()).max(500),
+  timeEstimates: z.array(LineWorkTimeSchema).max(500).refine((lines) => new Set(lines.map(({ sourceLineId }) => sourceLineId)).size === lines.length,
+    'Work times must identify distinct source lines').optional(),
+  requiredQuantities: z.array(LineRequiredQuantitiesSchema).max(500).refine((lines) => new Set(lines.map(({ sourceLineId }) => sourceLineId)).size === lines.length,
+    'Required quantities must identify distinct source lines').optional(),
 }).strict().refine(({ overrides }) => new Set(overrides.map(({ sourceLineId }) => sourceLineId)).size === overrides.length,
   'Service overrides must identify distinct source lines');
 export const LineServiceStatusSchema = z.object({
   sourceLineId: QuantityResultSchema.shape.sourceLineId,
   service: ServiceTypeSchema.nullable(),
+  serviceOrigin: z.enum(['source', 'local', 'unknown']).optional(),
   inherited: z.boolean(),
   locked: z.boolean(),
+  requiredQuantitiesCustomized: z.boolean().optional(),
+  canEditRequiredQuantities: z.boolean().optional(),
   deliveredMilli: z.number().int().nonnegative(),
   installedMilli: z.number().int().nonnegative(),
   collectedMilli: z.number().int().nonnegative(),
@@ -225,13 +323,11 @@ export const LineServiceStatusSchema = z.object({
   availableDeliveryMilli: WorkMilliSchema,
   availableInstallationMilli: WorkMilliSchema,
   availableCollectionMilli: WorkMilliSchema,
-  planningBlockedReason: z.enum(['source_review', 'unknown_service', 'legacy_scope_review', 'scope_outdated', 'over_reserved', 'damage_hold']).nullable(),
+  planningBlockedReason: z.enum(['source_review', 'prior_work_review', 'unknown_service', 'legacy_scope_review', 'scope_outdated', 'over_reserved', 'damage_hold']).nullable(),
 }).strict();
 export const WorkLineInputSchema = z.object({
   sourceLineId: SourceItemSchema.shape.sourceLineId,
-  deliveryMilli: WorkMilliSchema,
-  installationMilli: WorkMilliSchema,
-  collectionMilli: WorkMilliSchema,
+  ...OperationQuantitiesSchema.shape,
   customerStockConfirmed: z.boolean().optional(),
 }).strict().refine((line) => line.deliveryMilli + line.installationMilli + line.collectionMilli > 0, 'Select at least one operation for each planned line');
 export const WorkLinesInputSchema = z.array(WorkLineInputSchema).min(1).max(500)
@@ -248,16 +344,49 @@ export type VisitWorkScope = z.infer<typeof VisitWorkScopeSchema>;
 export const ScopeReviewReasonSchema = z.enum(['missing_scope', 'source_review', 'source_changed', 'work_changed', 'stock_pending', 'damage_hold']).nullable();
 export const RemainingWorkEstimateSchema = z.object({
   minutes: z.number().int().min(0).max(10080).nullable(),
-  basis: z.enum(['proportional_remaining_operations', 'no_remaining_work', 'unknown']),
+  basis: z.enum(['proportional_remaining_operations', 'local_operation_rates', 'mixed_operation_rates', 'no_remaining_work', 'unknown']),
   sourceMinutes: z.number().int().positive().max(10080).nullable(),
+  missingSourceLineIds: z.array(z.number().int().positive()).optional(),
+  staleSourceLineIds: z.array(z.number().int().positive()).optional(),
+  exceedsLimit: z.boolean().optional(),
 }).strict();
 export type RemainingWorkEstimate = z.infer<typeof RemainingWorkEstimateSchema>;
+export const LineWorkTimeStatusSchema = WorkTimeRatesSchema.extend({
+  sourceLineId: QuantityResultSchema.shape.sourceLineId, stale: z.boolean(),
+  missingOperations: z.array(z.enum(['delivery', 'installation', 'collection'])),
+  remainingMinutes: z.number().int().min(0).max(10080).nullable(),
+  basis: z.enum(['source_total_proportion', 'local', 'mixed', 'unknown']),
+  localSavedAt: InstantSchema.nullable(), localSavedBy: OperatorSnapshotSchema.nullable(), canEdit: z.boolean(),
+}).strict();
 export const EvidenceReferenceSchema = z.object({
   id: IdSchema,
   type: z.enum(['assembly', 'damage', 'missing_parts', 'document', 'photo']),
   itemIds: z.array(z.number().int().positive()).max(500),
 }).strict();
 export const MAX_VISIT_EVIDENCE = 100;
+export const SignatureRefusalSchema = z.object({
+  reason: TextSchema,
+  noPhotoReason: TextSchema.optional(),
+}).strict();
+const ApprovedSignatureRefusalSchema = z.object({ decision: z.literal('approved'), reason: TextSchema }).strict();
+const CorrectedSignatureRefusalSchema = z.object({
+  decision: z.literal('corrected'),
+  reason: TextSchema,
+  quantities: z.array(QuantityResultSchema).min(1).max(500),
+}).strict();
+export const SignatureRefusalReviewDecisionSchema = z.discriminatedUnion('decision', [
+  ApprovedSignatureRefusalSchema, CorrectedSignatureRefusalSchema,
+]);
+const SignatureRefusalReviewMetadata = z.object({
+  resultId: IdSchema,
+  reviewedAt: InstantSchema,
+  reviewedBy: OperatorSnapshotSchema,
+});
+export const SignatureRefusalReviewSchema = z.discriminatedUnion('decision', [
+  ApprovedSignatureRefusalSchema.extend(SignatureRefusalReviewMetadata.shape),
+  CorrectedSignatureRefusalSchema.extend(SignatureRefusalReviewMetadata.shape),
+]);
+export type SignatureRefusalReviewDecision = z.infer<typeof SignatureRefusalReviewDecisionSchema>;
 export const DocumentSnapshotSchema = z.object({
   id: IdSchema,
   name: z.string(),
@@ -293,6 +422,7 @@ export const VisitResultSchema = z.object({
   evidence: z.array(EvidenceReferenceSchema).max(MAX_VISIT_EVIDENCE),
   customerSignature: SignatureSchema.nullable(),
   crewSignature: SignatureSchema.nullable(),
+  signatureRefusal: SignatureRefusalSchema.optional(),
   sourceSnapshot: SourceSchema,
   instructionsSnapshot: InstructionsSchema,
   assignmentsSnapshot: z.array(AssignmentSchema).max(30),
@@ -329,6 +459,7 @@ export const AppointmentSchema = z.object({
   responsibleParticipant: ResponsibleParticipantSchema.optional(),
   actualStartedAt: InstantSchema.optional(),
   failedAttempt: FailedAttemptSchema.optional().describe('A customer-absent attempt with no goods handed over or work completed.'),
+  signatureRefusalReview: SignatureRefusalReviewSchema.optional(),
   transportAllocations: z.array(TransportAllocationSchema).max(200).optional(),
   customerConfirmation: CustomerConfirmationSchema.optional().describe(
     'The operator who recorded the customer’s agreement to the current visit window. An assigned booked visit without this record is awaiting customer confirmation.',
@@ -381,6 +512,7 @@ export const CompletionSchema = z.object({
   id: IdSchema, at: InstantSchema, actorId: IdSchema, actorName: TextSchema,
   sourceSnapshot: SourceSchema,
   resultIds: z.array(IdSchema),
+  priorWorkSnapshot: z.array(PriorWorkRevisionSchema).max(500).optional(),
   reopenedAt: InstantSchema.nullable(),
   reopenReason: NullableTextSchema,
 }).strict();
@@ -401,8 +533,10 @@ export const DeliverySchema = z.object({
   source: SourceSchema,
   sourceReview: z.boolean(),
   sourceChanged: z.boolean(),
+  sourceImport: SourceImportStateSchema.optional(),
   sourceWarnings: z.array(TextSchema).max(100),
   servicePlan: ServicePlanSchema.optional(),
+  priorWorkRevisions: z.array(PriorWorkRevisionSchema).max(5000).optional(),
   routePoint: GeoPointSchema.optional(),
   addressGeography: AddressGeographySchema.optional(),
   instructions: InstructionsSchema,
@@ -444,7 +578,7 @@ export function createDelivery(source: SourceSnapshot, id: string): Delivery {
   const service = mappedSourceService(source.serviceType);
   return DeliverySchema.parse({
     id, version: 1, source, sourceReview: false, sourceChanged: false, sourceWarnings: [],
-    ...(service === null ? {} : { servicePlan: { defaultService: service, overrides: [] } }),
+    ...(service === null ? {} : { servicePlan: { defaultService: service, defaultOrigin: 'source' as const, overrides: [] } }),
     instructions: { floor: null, elevator: 'unknown', access: null, parking: null, restrictions: null, notes: null },
     appointments: [], issues: [], returnRequests: [], completions: [], completedAt: null,
   });

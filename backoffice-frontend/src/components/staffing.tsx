@@ -1,4 +1,5 @@
 'use client';
+import { DatePicker } from './ui/date-picker';
 
 import { useEffect, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
@@ -37,7 +38,7 @@ export function Staffing({ onOpen }: { onOpen: (deliveryId: string) => void }) {
   }, [day, requestKey]);
   const booked = entries?.filter((entry) => entry.appointment.status === 'booked') ?? [];
   return <>
-    <div className="page-heading"><div><p className="eyebrow">{t('staffingEyebrow')}</p><PageHeadingTitle title={t('staffingTitle')} topic="staffing" /><p className="subtitle">{t('staffingSubtitle')}</p></div><div className="calendar-controls"><button className="button secondary" disabled={loading} onClick={refresh}>{t('refreshStaffing')}</button><label className="sr-only" htmlFor="staffing-date">{t('staffingDate')}</label><input id="staffing-date" type="date" value={day} onChange={(event) => { if (event.target.value) setDay(event.target.value); }} /></div></div>
+    <div className="page-heading"><div><p className="eyebrow">{t('staffingEyebrow')}</p><PageHeadingTitle title={t('staffingTitle')} topic="staffing" /><p className="subtitle">{t('staffingSubtitle')}</p></div><div className="calendar-controls"><button className="button secondary" disabled={loading} onClick={refresh}>{t('refreshStaffing')}</button><label className="sr-only" htmlFor="staffing-date">{t('staffingDate')}</label><DatePicker id="staffing-date" label={t('staffingDate')} type="date" value={day} onValueChange={(value) => { if (value) setDay(value); }} /></div></div>
     <Notice>{t('staffingIntro')}</Notice>
     <div className="mb-3 flex h-10 items-center gap-3 text-xs" role="status" aria-live="polite">{error ? <><span className="max-h-10 flex-1 overflow-y-auto text-destructive">{error}{entries ? " " + t('previousVisits') : ''}</span><button className="text-button" disabled={loading} onClick={refresh}>{t('retryStaffing')}</button></> : <span className="muted">{entries && loading ? t('refreshingStaffing') : ''}</span>}</div>
     {!entries && loading ? <Pending>{t('loadingBookedVisits')}</Pending> : null}

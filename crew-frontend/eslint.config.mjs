@@ -22,5 +22,6 @@ export default defineConfig([
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
-  globalIgnores(['.next/**', 'out/**', 'node_modules/**', 'next-env.d.ts']),
+  // Runtime snapshots contain copies of the sources and generated Next.js output.
+  globalIgnores(['.next/**', '.local/odoo-integration/**', 'out/**', 'node_modules/**', 'next-env.d.ts']),
 ]);

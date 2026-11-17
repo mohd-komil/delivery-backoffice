@@ -23,6 +23,7 @@ const stop = job(stopId, 'Stop');
 const saved = routeDraftSchema.parse({
   id: draftId, version: 1, createdAt: departure, updatedAt: departure, name: 'Saved route', departAt: departure, crewId: null, vehicleId: null,
   startPointId: point.id, endPointId: point.id, stops: [{ deliveryId: stopId, workMinutes: 30 }], manualEstimates: [], jobs: [stop],
+  planning: { participantIds: [], participantAvailability: [], vehicleAvailability: null, driver: { kind: 'unknown' }, transferBufferMinutes: null },
   pointContexts: [{ pointId: point.id, point, addressKey: null }, { pointId: stopId, point: stop.point, addressKey: null }], warnings: [],
   timeline: {
     departAt: departure, startPointId: point.id, endPointId: point.id, returnDepartAt: departure,
@@ -154,6 +155,7 @@ void test('reorder and Refresh retain the timeline and editor; manual zero binds
     const firstPreview = api.calls.find((call) => call.pathname === '/routes/preview');
     assert.ok(firstPreview && typeof firstPreview.body === 'object' && firstPreview.body !== null);
     assert.equal('useGoogleRoads' in firstPreview.body, false);
+    assert.deepEqual(routeDraftInputSchema.parse(firstPreview.body).planning?.driver, { kind: 'none' });
 
     const manual = Array.from(document.querySelectorAll('details')).find((element) => element.querySelector('summary')?.textContent === 'Manual travel times');
     assert.ok(manual);

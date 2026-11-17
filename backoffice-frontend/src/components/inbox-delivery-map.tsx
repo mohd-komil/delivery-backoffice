@@ -5,10 +5,12 @@ import { useLocale, useTranslations } from 'next-intl';
 import { apiRequest, errorMessage } from '@/lib/api';
 import { inboxMapSchema, type InboxMapData, type MapDelivery } from '@/lib/inbox-map';
 import { inboxMapViewportKey, type InboxMapArea } from '@/lib/inbox-map-area';
+import { useWorkspaceSource } from '@/lib/workspace-source';
 import { InboxMapCanvas } from './inbox-map-canvas';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Empty } from './ui';
+import { GeocodingAttribution } from './delivery-geocoding';
 
 export function InboxDeliveryMap({ query, refreshKey, visible, onOpen, area = null, onAreaChange }: {
   query: string; refreshKey: number; visible: boolean; onOpen: (id: string) => void;
@@ -16,6 +18,7 @@ export function InboxDeliveryMap({ query, refreshKey, visible, onOpen, area = nu
 }) {
   const t = useTranslations('inboxMap');
   const locale = useLocale();
+  const source = useWorkspaceSource(visible);
   const [retry, setRetry] = useState(0);
   const [snapshot, setSnapshot] = useState<{ query: string; data: InboxMapData } | null>(null);
   const [settled, setSettled] = useState<{ query: string; refreshKey: number; retry: number; error: unknown } | null>(null);
@@ -74,7 +77,7 @@ export function InboxDeliveryMap({ query, refreshKey, visible, onOpen, area = nu
             <InboxMapCanvas points={points} filterKey={inboxMapViewportKey(snapshot.query)} visible={visible && current && ((data?.mappedCount ?? 0) > 0 || !!onAreaChange)} onOpen={onOpen} labels={labels}
               area={area} onAreaChange={onAreaChange} selectionDisabled={!current || busy || !!error} />
           </div>
-          {data?.total === 0 ? <Empty title={t('empty')}>{t('emptyHelp')}</Empty> : data?.mappedCount === 0 ? <Empty title={t('noCoordinates')}>{t('noCoordinatesHelp')}</Empty> : null}
+          {data?.total === 0 ? <Empty title={t('empty')}>{t('emptyHelp')}</Empty> : data?.mappedCount === 0 ? <Empty title={t('noCoordinates')}>{t(source === 'odoo_readonly' ? 'noCoordinatesOdooHelp' : 'noCoordinatesHelp')}</Empty> : null}
           {data && data.missingCount > 0 ? <section aria-label={t('missingTitle')} className="mt-4 rounded-md border border-border bg-muted/30 p-3">
             <h3 className="text-sm font-medium">{t('missingTitle')} · {data.missingCount}</h3>
             <p className="mt-1 text-xs text-muted-foreground">{t('missingHelp')}</p>
@@ -87,7 +90,9 @@ export function InboxDeliveryMap({ query, refreshKey, visible, onOpen, area = nu
         </div>
         {!current ? <div className="absolute inset-0 grid place-items-center rounded-md bg-background/60 p-4 text-center text-sm" role="status">{t(error ? 'changedFiltersError' : 'refreshing')}</div> : null}
       </div> : null}
-      <p className="text-xs text-muted-foreground">{t('demoHint')}</p>
+      <p className="text-xs text-muted-foreground">{t(source === 'synthetic' ? 'demoHint' : source === 'odoo_readonly' ? 'odooHint' : 'coordinatesHint')}</p>
+      {data?.markers.some((marker) => marker.pointSource === 'geocoded') ? <GeocodingAttribution /> : null}
+      {[...new Set(data?.markers.flatMap((marker) => marker.geocoding ? [marker.geocoding.attribution] : []) ?? [])].map((attribution) => <p key={attribution} className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{attribution}</p>)}
     </Card>
   </section>;
 }

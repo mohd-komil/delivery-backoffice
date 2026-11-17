@@ -28,6 +28,8 @@ function failureMessage(error: ApiError, action: Action) {
     || error.code === 'INSTALLATION_REQUIRES_DELIVERY') return 'finishRemainingChanged';
   if (error.code === 'INCOMPLETE_WORK_REASON_REQUIRED' || error.code === 'UNEXPECTED_INCOMPLETE_WORK_REASON') return 'incompleteReviewReasons';
   if (error.code === 'SIGNATURES_NOT_DISTINCT') return 'signatureDistinct';
+  if (error.code === 'SIGNATURE_REFUSAL_REQUIRES_WORK') return 'signatureRefusalRequiresWork';
+  if (error.code === 'COMPLETION_PHOTO_REQUIRED') return 'photoRequired';
   if (error.code === 'PHOTO_READ_FAILED') return 'photoReadFailed';
   if (error.status === 403 || error.status === 404) return 'actionUnavailable';
   if (error.status === 409) return 'visitChanged';

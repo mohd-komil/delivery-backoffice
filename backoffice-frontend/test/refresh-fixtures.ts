@@ -4,11 +4,12 @@ import { LocaleProvider } from '../src/components/locale-provider';
 import { Toaster } from '../src/components/ui/sonner';
 import { defaultLocale, type Locale } from '../src/i18n/config';
 import { messagesForLocale } from '../src/i18n/messages';
+import type { DispatcherDetail, DispatcherList, DispatcherOwner } from '../src/lib/dispatcher';
 import type { Root } from 'react-dom/client';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import {
   detailSchema, deliveryListSchema, userSchema,
-  type AvailableParticipant, type CalendarEntry, type Crew, type DeliveryDetail, type DeliveryList, type ImportRun, type Participant, type Skill, type TaskTemplate, type Vehicle, type TransportAvailability,
+  type AvailableParticipant, type CalendarEntry, type CalendarFilterCatalog, type Crew, type DeliveryDetail, type DeliveryList, type ImportRun, type Participant, type Skill, type TaskTemplate, type Vehicle, type TransportAvailability,
 } from '../src/lib/contracts';
 
 export const deliveryId = '50000000-0000-4000-8000-000000000001';
@@ -56,6 +57,7 @@ export class ApiFixture {
   detail = detailFixture();
   list = listFixture();
   calendar: CalendarEntry[] = [];
+  calendarFilterCatalog: CalendarFilterCatalog | null = null;
   crews: Crew[] = [];
   templates: TaskTemplate[] = [];
   participants: Participant[] = [];
@@ -65,6 +67,9 @@ export class ApiFixture {
   readonly participantCalendars = new Map<string, unknown>();
   availableParticipants: AvailableParticipant[] = [];
   imports: ImportRun[] = [];
+  dispatcherList: DispatcherList | null = null;
+  dispatcherOwners: DispatcherOwner[] = [];
+  readonly dispatcherDetails = new Map<string, DispatcherDetail>();
 
   defer(pathname: string, method = 'GET', search?: string) {
     const listeners: Array<(response: Response) => void> = [];
@@ -93,6 +98,18 @@ export class ApiFixture {
     if (plan) { plan.called = true; return plan.promise; }
     if (method !== 'GET') throw new Error(`Unexpected test mutation: ${method} ${call.pathname}`);
     if (call.pathname === '/auth/me') return Response.json(user);
+    if (call.pathname === '/dispatcher/queue' && this.dispatcherList) return Response.json(this.dispatcherList);
+    if (call.pathname === '/dispatcher/owners') return Response.json(this.dispatcherOwners);
+    if (call.pathname.startsWith('/dispatcher/queue/') && this.dispatcherDetails.has(call.pathname)) return Response.json(this.dispatcherDetails.get(call.pathname));
+    if (call.pathname === '/health') return Response.json({ status: 'ok', sourceKind: 'synthetic' });
+    if (/^\/deliveries\/[0-9a-f-]+\/source-review$/u.test(call.pathname)) return Response.json({
+      deliveryVersion: this.detail.delivery.version, status: 'current', revisionCoverage: 'unavailable', documentCoverage: 'not_mapped',
+      acceptedHash: 'a'.repeat(64), candidate: null, canAccept: false, canKeepAccepted: false, blockers: [],
+    });
+    if (/^\/deliveries\/[0-9a-f-]+\/geocoding$/u.test(call.pathname)) return Response.json({
+      provider: 'geoapify', configured: false, addressKey: '1'.repeat(64), deliveryVersion: this.detail.delivery.version,
+      recordVersion: null, status: 'not_configured', reason: 'unconfigured', retryAt: null, candidate: null, acceptance: null,
+    });
     if (call.pathname === '/deliveries') return Response.json(this.list);
     if (call.pathname === `/deliveries/${deliveryId}`) return Response.json(this.detail);
     if (call.pathname === '/crews') return Response.json(this.crews);
@@ -107,6 +124,17 @@ export class ApiFixture {
     if (/^\/participants\/[^/]+\/calendar$/.test(call.pathname) && this.participantCalendars.has(call.pathname)) return Response.json(this.participantCalendars.get(call.pathname));
     if (call.pathname.startsWith(`/deliveries/${deliveryId}/appointments/`) && call.pathname.endsWith('/participants')) return Response.json({ people: this.availableParticipants });
     if (call.pathname === '/calendar') return Response.json(this.calendar);
+    if (call.pathname === '/calendar/filter-options') {
+      // Compatibility fixture for older Calendar tests; feature tests provide an independent global catalog.
+      if (this.calendarFilterCatalog) return Response.json(this.calendarFilterCatalog);
+      const crews = new Map<string, CalendarFilterCatalog['crews'][number]>();
+      for (const entry of this.calendar) for (const assignment of entry.appointment.assignments) {
+        crews.set(assignment.crewId, { id: assignment.crewId, name: assignment.crewName, enabled: true });
+      }
+      for (const crew of this.crews) crews.set(crew.id, { id: crew.id, name: crew.name, enabled: crew.enabled });
+      return Response.json({ destinations: this.calendar.map((entry) => ({ city: entry.geography?.city ?? null,
+        province: entry.geography?.province ?? null, postalCode: entry.geography?.postalCode ?? null, count: 1 })), crews: [...crews.values()] } satisfies CalendarFilterCatalog);
+    }
     if (call.pathname === '/imports') return Response.json(this.imports);
     throw new Error(`Unexpected test request: ${method} ${call.pathname}`);
   };
@@ -130,8 +158,9 @@ export async function click(button: HTMLButtonElement): Promise<void> {
 }
 
 /** Uses the native setter so React's controlled-input change tracking sees the same event as user input. */
-export async function editInput(input: HTMLInputElement, value: string): Promise<void> {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+export async function editInput(input: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<void> {
+  const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
   assert.ok(setter);
   await act(async () => { setter.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); });
 }

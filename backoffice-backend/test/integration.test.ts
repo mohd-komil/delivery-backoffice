@@ -130,7 +130,7 @@ void test('Nest HTTP with real guards, isolated PostgreSQL fixtures, planning, r
       adminCookie = await login('admin');
       operatorCookie = await login('operator');
       assert.equal(z.object({ role: z.literal('operator') }).parse(await success('/auth/me')).role, 'operator');
-      await failure('/crews', 403, 'POST', { name: 'Denied admin operation' }, operatorCookie);
+      await failure('/crews', 400, 'POST', { name: 'Incomplete operator input' }, operatorCookie);
       await failure('/imports', 403, 'POST', {}, operatorCookie, 'https://untrusted.example');
       await failure('/auth/login', 400, 'POST', { ...accounts.operator, role: 'admin' });
       await failure('/deliveries?unexpected=admin', 400, 'GET', undefined, operatorCookie);

@@ -4,7 +4,7 @@ One Delivery represents one picking, which can contain lines from several sales 
 
 ## Catalogue and workflow
 
-`Vehicles` appears directly below `Skills`. Administrators create/edit vehicles; operators can view the catalogue and assign transport to visits. A physical vehicle has a name, unique plate, company/external ownership, operational status, enabled flag and notes. External vehicles identify their provider and contact. Ownership is independent of the crew and driver.
+`Vehicles` appears directly below `Skills`. Administrators and operators can create, edit, enable/disable and delete unused vehicles, as well as assign transport to visits. A physical vehicle has a name, unique plate, company/external ownership, operational status, enabled flag and notes. External vehicles identify their provider and contact. Ownership is independent of the crew and driver.
 
 1. Book an appointment and assign the actual crew/participants/tasks.
 2. In that visit's **Transport** section, add a vehicle. The reservation defaults to the visit interval and can extend for loading, travel and return.
@@ -30,13 +30,18 @@ The application stores catalogue vehicles in `vehicle` and active derived bookin
 
 All routes are under `/api`, use existing session guards and validate writable fields. Browser writes require the exact configured Origin.
 
-- `GET/POST /vehicles`; `PATCH /vehicles/:id` with captured `version` (writes: admin).
+- `GET/POST /vehicles`; `GET /vehicles/:id`; `PATCH /vehicles/:id` with captured `version` (writes: admin/operator).
+- `DELETE /vehicles/:id` takes strict `{version}` and returns `{id,deleted:true}` (admin/operator). Stale versions or references return 409; unknown/already deleted IDs return 404. Only unused vehicles can be deleted. Delivery snapshots (including cancelled/replaced transport), saved routes, published route revisions and reservations prevent deletion. Use explicit disable instead; disabling is also blocked while an active published route needs the vehicle. Deletion and allocation share the scheduling lock, and a `vehicle.deleted` audit event is retained. No relationship or history is removed automatically.
 - `GET /deliveries/:id/appointments/:appointmentId/transport/availability?from=...&to=...` (admin/operator).
 - `POST /deliveries/:id/appointments/:appointmentId/transport` adds `{version,requestId,vehicleId,reserveFrom,reserveTo,driver}`.
 - `POST .../transport/:allocationId/replace` adds the replacement fields plus `reason`.
 - `POST .../transport/:allocationId/cancel` takes `{version,requestId,reason}`.
 
 Transport commands return the updated delivery detail. A retry with the same request ID/payload returns the recorded receipt before reconsidering current catalogue availability; changing a used request's payload conflicts. The generated [OpenAPI contract](openapi.json) specifies exact schemas and bounds.
+
+The 2026-11-13 catalogue CRUD checks passed backend typecheck, typed lint and build, plus 7 new isolated PostgreSQL checks and 32 related regression checks. These include stale deletion, admin/session/Origin guards, vehicle snapshots, historical route references and concurrent deletion versus allocation. See [the shared verification commands](participant-skills.md#проверка-crud-2026-11-13). No database migration is needed for these endpoints.
+
+The subsequent permissions clarification allows Francesca/operator to manage this catalogue through the same guarded HTTP endpoints. That checkpoint passed 40/40 checks. The user's later explicit request also enabled operator management of Participants, participant qualifications, Crews and Task templates; the updated suite passed 41/41. No user role was changed, and allocation/history/version safeguards remain identical for admin and operator. See [current directory permissions](directory-crud.md#operator-permissions--13-november-2026).
 
 ## Fictional examples
 
@@ -45,6 +50,8 @@ After Docker startup, run from `backoffice-backend`:
 ```powershell
 ./scripts/demo-vehicles.ps1
 ```
+
+For the separate Odoo customer-development stand at `http://127.0.0.1:3031`, run `./scripts/demo-vehicles.ps1 -CustomerDevelopment`. The helper checks the exact local target and source model, uses the existing admin credentials privately, and creates only missing fictional catalogue entries. It does not overwrite existing vehicles, allocate transport, alter appointments or write to Odoo. The set contains 5 vehicles, including company vans, a maintenance example and 2 external provider vehicles. Verified on 2026-11-13: first run created 5; the repeat created 0. Vehicle identities, plates and provider contacts are explicitly synthetic.
 
 This authenticates through the local API and creates only missing deterministic plates: two available company vehicles, one company vehicle in maintenance, and one available external vehicle. Repetition preserves existing catalogue edits and all appointments. Names, plates, provider and contact are fictional; these are persisted records, not static frontend mocks. A private run report is saved under ignored `.local/vehicle-demo-runs` without credentials.
 

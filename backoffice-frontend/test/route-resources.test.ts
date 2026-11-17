@@ -6,7 +6,7 @@ import { participantSchema } from '../src/lib/contracts';
 import type { RoutePlanning, RouteWindow } from '../src/lib/route-drafts';
 import { ApiFixture, domHarness } from './refresh-fixtures';
 
-void test('removing a selected disabled participant also clears its driver role and only its working intervals',async()=>{
+void test('removing a selected disabled participant removes only their working intervals from a driverless plan',async()=>{
   const first=participantSchema.parse({id:randomUUID(),version:1,name:'Marco Russo',firstName:'Marco',lastName:'Russo',preferredName:null,
     phoneNumber:null,address:null,login:null,external:false,enabled:false,hasPassword:false,skillIds:[]});
   const second={...first,id:randomUUID(),name:'Luca Marino',enabled:true};
@@ -14,7 +14,7 @@ void test('removing a selected disabled participant also clears its driver role 
   let planning:RoutePlanning={participantIds:[first.id,second.id],participantAvailability:[
     {participantId:first.id,workingIntervals:[interval],unavailableIntervals:[]},
     {participantId:second.id,workingIntervals:[interval],unavailableIntervals:[]},
-  ],vehicleAvailability:null,driver:{kind:'participant',participantId:first.id},transferBufferMinutes:0};
+  ],vehicleAvailability:null,driver:{kind:'none'},transferBufferMinutes:0};
   const page=await domHarness(new ApiFixture());
   try{
     const {RouteResourceFields}=await import('../src/components/route-planning-controls');
@@ -25,12 +25,11 @@ void test('removing a selected disabled participant also clears its driver role 
     assert.equal(checkbox.checked,true);assert.equal(checkbox.disabled,false);
     await act(async()=>{checkbox.click();});
     assert.deepEqual(planning.participantIds,[second.id]);
-    assert.deepEqual(planning.driver,{kind:'unknown'});
+    assert.deepEqual(planning.driver,{kind:'none'});
     assert.deepEqual(planning.participantAvailability,[{participantId:second.id,workingIntervals:[interval],unavailableIntervals:[]}]);
     await render();
     assert.equal(Array.from(page.container.querySelectorAll('label')).some((label)=>label.textContent==='Marco Russo'),false,'A disabled person cannot be selected again.');
-    const driver=page.container.querySelector('select');assert.ok(driver);
-    assert.equal(driver.value,'unknown');assert.equal(driver.selectedOptions[0]?.textContent,'Not specified');
+    assert.doesNotMatch(page.container.textContent ?? '', /driver/i);
   }finally{await page.close();}
 });
 
@@ -61,13 +60,14 @@ void test('unknown customer windows stay explicit; changing arrival versus compl
   }finally{await page.close();}
 });
 
-void test('resource form does not silently invent a driver, shift, vehicle availability or transfer buffer',async()=>{
+void test('resource form omits driver and requires explicit shift, vehicle availability and transfer buffer',async()=>{
   const page=await domHarness(new ApiFixture());
   const changes:RoutePlanning[]=[];
   try{
     const {RouteResourceFields,emptyRoutePlanning}=await import('../src/components/route-planning-controls');
     await page.render(createElement(RouteResourceFields,{value:emptyRoutePlanning,participants:[],onChange:(next:RoutePlanning)=>{changes.push(next);}}));
-    assert.equal(page.container.querySelector('select')?.value,'unknown');
+    assert.doesNotMatch(page.container.textContent ?? '', /driver/i);
+    assert.deepEqual(emptyRoutePlanning.driver, { kind: 'none' });
     assert.equal(page.container.querySelector('input[type="datetime-local"]'),null);
     const buffer=page.container.querySelector<HTMLInputElement>('input[type="number"]');assert.ok(buffer);assert.equal(buffer.value,'');
     const vehicle=page.container.querySelector<HTMLInputElement>('input[type="checkbox"]');assert.ok(vehicle);assert.equal(vehicle.checked,false);

@@ -14,10 +14,14 @@ import { DomainError } from './domain/rules';
 import { OperationsModule } from './operations/module';
 import { OperationsController } from './operations/controller';
 import { Importer } from './integration/importer';
+import { ImportGeocoding } from './integration/import-geocoding';
+import { SourceReview } from './integration/source-review';
 import { apiDocument } from './openapi';
 import { CrewModule } from './crew/controller';
 import { CREW_FINISH_JSON_MAX_BYTES } from './crew/contracts';
 import { RoutingModule } from './routing/module';
+import { DispatcherModule } from './dispatcher/module';
+import { TimeStandardsModule } from './planning/time-standards-module';
 
 export { OperationsModule } from './operations/module';
 
@@ -45,12 +49,17 @@ class Errors implements ExceptionFilter {
 @Controller()
 class SystemController {
   constructor(@Inject(Database) private readonly db:Database) {}
-  @Public() @Get('health') async health() {await this.db.source.query('SELECT 1');return {status:'ok',database:'delivery_backoffice',sourceModel:'synthetic Odoo teaching model'};}
+  @Public() @Get('health') async health() {
+    await this.db.source.query('SELECT 1');
+    const external = config().ODOO_SOURCE_MODE === 'odoo18';
+    return {status:'ok',database:'delivery_backoffice',sourceKind:external?'odoo_readonly':'synthetic',
+      sourceModel:external?'Odoo customer-schema test copy (read only)':'synthetic Odoo teaching model'};
+  }
   @Get('openapi.json') openapi() {return apiDocument();}
 }
-@Module({imports:[OperationsModule],providers:[Importer],exports:[Importer]})
+@Module({imports:[OperationsModule,RoutingModule],providers:[Importer,ImportGeocoding,SourceReview],exports:[Importer,SourceReview]})
 export class IntegrationModule {}
-@Module({imports:[DatabaseModule,IdentityModule,OperationsModule,IntegrationModule,CrewModule,RoutingModule],controllers:[SystemController,OperationsController],providers:[{provide:APP_GUARD,useClass:AccessGuard}]})
+@Module({imports:[DatabaseModule,IdentityModule,OperationsModule,IntegrationModule,CrewModule,RoutingModule,DispatcherModule,TimeStandardsModule],controllers:[SystemController,OperationsController],providers:[{provide:APP_GUARD,useClass:AccessGuard}]})
 export class AppModule {}
 
 function isCrewFinishJson(request: IncomingMessage): boolean {
@@ -62,7 +71,7 @@ function isCrewFinishJson(request: IncomingMessage): boolean {
 
 export function configureApplication(app:NestExpressApplication) {
   app.setGlobalPrefix('api');
-  app.use(['/api/crew', '/api/deliveries', '/api/routes', '/api/participants', '/api/crews', '/api/templates'], (_request: unknown, response: Response<unknown>, next: NextFunction) => {
+  app.use(['/api/crew', '/api/deliveries', '/api/routes', '/api/participants', '/api/crews', '/api/templates', '/api/dispatcher', '/api/planning'], (_request: unknown, response: Response<unknown>, next: NextFunction) => {
     response.setHeader('Cache-Control', 'private, no-store');
     next();
   });

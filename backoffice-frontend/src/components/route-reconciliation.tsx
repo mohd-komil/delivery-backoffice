@@ -1,5 +1,8 @@
 'use client';
 
+import { Combobox } from './ui/combobox';
+
+
 import { useEffect, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { isWorkMessageKey } from '@/i18n/route-operations';
@@ -84,12 +87,12 @@ export function RouteReconciliation({ data, disabled, command }: { data: RouteOp
           <LineFacts line={line} />
           <div className="my-3 grid gap-3 sm:grid-cols-2"><OwnerField value={draft.ownerUserId} owners={owners} onChange={(value) => owner(line, value)} /><Field label={t('lineNote')}><Input required maxLength={2000} value={draft.note} onChange={(event) => change(line, { note: event.target.value })} /></Field></div>
           <div className="grid gap-3">{draft.nextActions.map((action) => <section key={action.operation} className="grid gap-3 rounded-lg border bg-muted/20 p-3"><h5 className="font-semibold">{t(action.operation)} · {t('nextAction')}</h5><div className="grid gap-3 sm:grid-cols-2">
-            <Field label={t('nextAction')}><select value={action.action} onChange={(event) => { const next = nextActionKinds.find((kind) => kind === event.target.value); if (next) change(line, { nextActions: draft.nextActions.map((entry) => entry.operation === action.operation ? { ...entry, action: next } : entry) }); }}>{nextActionKinds.filter((kind) => kind !== 'installation_visit' || action.operation === 'installation').map((kind) => <option key={kind} value={kind} disabled={!!line.planningBlockedReason && ['ready_for_repeat', 'installation_visit', 'already_planned'].includes(kind)}>{t(kind)}</option>)}</select></Field>
+            <Field label={t('nextAction')}><Combobox value={action.action} onChange={(event) => { const next = nextActionKinds.find((kind) => kind === event.target.value); if (next) change(line, { nextActions: draft.nextActions.map((entry) => entry.operation === action.operation ? { ...entry, action: next } : entry) }); }}>{nextActionKinds.filter((kind) => kind !== 'installation_visit' || action.operation === 'installation').map((kind) => <option key={kind} value={kind} disabled={!!line.planningBlockedReason && ['ready_for_repeat', 'installation_visit', 'already_planned'].includes(kind)}>{t(kind)}</option>)}</Combobox></Field>
             <OwnerField value={action.ownerUserId} owners={owners} onChange={(value) => change(line, { nextActions: draft.nextActions.map((entry) => entry.operation === action.operation ? { ...entry, ownerUserId: value } : entry) })} />
             {action.action === 'already_planned' ? <RouteFollowUpSelect line={line} operation={action.operation} value={action.followUpAppointmentId} onChange={(value) => change(line, { nextActions: draft.nextActions.map((entry) => entry.operation === action.operation ? { ...entry, followUpAppointmentId: value } : entry) })} /> : null}
             <Field label={t('note')}><Input maxLength={2000} value={action.note} placeholder={draft.note} onChange={(event) => change(line, { nextActions: draft.nextActions.map((entry) => entry.operation === action.operation ? { ...entry, note: event.target.value } : entry) })} /></Field>
           </div></section>)}</div>
-          <div className="mt-3 grid gap-3">{draft.cargo.map((cargo) => <section key={cargo.kind} className="grid gap-3 rounded-lg border p-3"><h5 className="font-semibold">{t('cargo')} · {t(cargo.kind)}</h5><div className="grid gap-3 sm:grid-cols-2"><Field label={t('location')}><select value={cargo.location} onChange={(event) => { const location = cargoLocations.find((value) => value === event.target.value); if (location) change(line, { cargo: draft.cargo.map((entry) => entry.kind === cargo.kind ? { ...entry, location } : entry) }); }}>{cargoLocations.map((value) => <option key={value} value={value}>{t(value)}</option>)}</select></Field>
+          <div className="mt-3 grid gap-3">{draft.cargo.map((cargo) => <section key={cargo.kind} className="grid gap-3 rounded-lg border p-3"><h5 className="font-semibold">{t('cargo')} · {t(cargo.kind)}</h5><div className="grid gap-3 sm:grid-cols-2"><Field label={t('location')}><Combobox value={cargo.location} onChange={(event) => { const location = cargoLocations.find((value) => value === event.target.value); if (location) change(line, { cargo: draft.cargo.map((entry) => entry.kind === cargo.kind ? { ...entry, location } : entry) }); }}>{cargoLocations.map((value) => <option key={value} value={value}>{t(value)}</option>)}</Combobox></Field>
             <Field label={t('quantity')}><Input type="number" min={0} max={(cargo.kind === 'collection' ? line.collectedMilli : Math.max(0, line.plannedDeliveryMilli - line.deliveredMilli)) / 1000} required={cargo.location !== 'unknown'} step="0.001" value={cargo.quantity} onChange={(event) => change(line, { cargo: draft.cargo.map((entry) => entry.kind === cargo.kind ? { ...entry, quantity: event.target.value } : entry) })} /></Field>
             <Field label={t('note')}><Input maxLength={2000} value={cargo.note} placeholder={draft.note} onChange={(event) => change(line, { cargo: draft.cargo.map((entry) => entry.kind === cargo.kind ? { ...entry, note: event.target.value } : entry) })} /></Field></div></section>)}</div>
         </td></tr>;
@@ -102,7 +105,7 @@ export function RouteReconciliation({ data, disabled, command }: { data: RouteOp
 
 function OwnerField({ value, owners, onChange }: { value: string; owners: ReconciliationOwner[]; onChange: (value: string) => void }) {
   const t = useTranslations('routeOperations');
-  return <Field label={t('owner')}><select value={value} required onChange={(event) => onChange(event.target.value)}><option value="">{t('selectOwner')}</option>{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></Field>;
+  return <Field label={t('owner')}><Combobox value={value} required onChange={(event) => onChange(event.target.value)}><option value="">{t('selectOwner')}</option>{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</Combobox></Field>;
 }
 
 function LineFacts({ line }: { line: RouteLineStatus }) {

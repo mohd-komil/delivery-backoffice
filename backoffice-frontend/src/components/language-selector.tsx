@@ -1,5 +1,8 @@
 'use client';
 
+import { Combobox } from './ui/combobox';
+
+
 import { useTransition } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -27,9 +30,9 @@ export function LanguageSelector() {
   return <div className="language-control">
     <label className="theme-control">
       <span>{t('language')}</span>
-      <select aria-label={t('language')} value={locale} disabled={pending} aria-busy={pending} onChange={(event) => changeLanguage(event.target.value)}>
+      <Combobox aria-label={t('language')} value={locale} disabled={pending} aria-busy={pending} onChange={(event) => changeLanguage(event.target.value)}>
         {Object.entries(localeNames).map(([code, name]) => <option value={code} lang={code} key={code}>{name}</option>)}
-      </select>
+      </Combobox>
     </label>
   </div>;
 }

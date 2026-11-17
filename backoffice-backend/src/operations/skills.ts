@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { assertRouteSkillsRetained } from './route-reservations';
-import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { QueryFailedError, type EntityManager } from 'typeorm';
 import { z } from 'zod';
 import { rows } from '../database/database';
@@ -41,8 +41,15 @@ export class Skills {
     return found;
   }
 
+  async get(rawId:string):Promise<Skill> {
+    const id=IdSchema.parse(rawId).toLowerCase();
+    const [skill]=await readSkills(this.store.db.source.manager,[id]);
+    if(!skill) throw new NotFoundException('Skill not found');
+    return skill;
+  }
+
   async save(id:string|null,input:unknown,actor:OperatorActor):Promise<Skill> {
-    if(actor.role!=='admin') throw new ForbiddenException('Administrator permission required');
+    // Both authenticated Backoffice roles manage this catalogue and participant qualifications.
     const command=id?SkillUpdateInput.parse(input):SkillCreateInput.parse(input);
     const skillId=id?IdSchema.parse(id).toLowerCase():randomUUID();
     try {

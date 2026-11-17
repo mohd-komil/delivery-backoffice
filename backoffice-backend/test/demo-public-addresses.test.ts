@@ -11,9 +11,13 @@ import { destinationAddressKey } from '../src/domain/destination-address';
 import { type Appointment, type CrewActor, type OperatorActor } from '../src/domain/model';
 import { changeServicePlan, confirmCustomerVisit, instantiateTask, planVisitWork, recordExecution, startVisit } from '../src/domain/rules';
 import { Importer } from '../src/integration/importer';
+import { ImportGeocoding } from '../src/integration/import-geocoding';
+import { AddressGeocoding } from '../src/routing/geocoding';
+import { GeoapifyClient } from '../src/routing/geoapify-client';
 import { DeliveryPoints } from '../src/operations/delivery-points';
 import { DeliveryStore } from '../src/operations/store';
 import { DestinationEntrances } from '../src/routing/entrances';
+import { SourceReview } from '../src/integration/source-review';
 
 // Test-owned addresses only. The executable reads the separately verified public venue manifest.
 const fixtures = PublicDemoAddressesSchema.parse(Array.from({ length: 11 }, (_, index) => {
@@ -94,7 +98,8 @@ void test('public fixture updates use isolated PostgreSQL, normal import, retain
     await database.onModuleInit();
     await database.source.runMigrations({ transaction: 'all' });
     const store = new DeliveryStore(database);
-    const importer = new Importer(database, store);
+    const importer = new Importer(database, store, new ImportGeocoding(store, new DeliveryPoints(store),
+      new AddressGeocoding(store, new GeoapifyClient({ settings: null }))));
     const principal: OperatorActor = { id: randomUUID(), name: 'DEMO public-address test operator', role: 'operator' };
     for (const customerId of [7, 8]) {
       const fixture = fixtures.find((entry) => entry.customerId === customerId);
@@ -175,13 +180,22 @@ void test('public fixture updates use isolated PostgreSQL, normal import, retain
     assert.equal(sourceAfter.find((partner) => partner.id === 12)?.street, null);
     assert.equal(sourceAfter.find((partner) => partner.id === 3)?.street, 'Dispatcher-selected different street');
     assert.equal((await importer.run(principal)).status, 'succeeded');
+    assert.deepEqual((await store.get(first.id)).source, worked.source, 'Even fixture addresses remain pending when historical work is protected');
+    const reviews = new SourceReview(store);
+    for (const delivery of await store.all()) {
+      const review = await reviews.get(delivery.id);
+      if (!review.candidate) continue;
+      assert.equal(review.canAccept, true, JSON.stringify(review.blockers));
+      await reviews.decide(delivery.id, { version: review.deliveryVersion, requestId: randomUUID(), candidateId: review.candidate.id,
+        candidateHash: review.candidate.hash, action: 'accept', reason: 'Dispatcher explicitly verified the replacement demo address against its public fixture manifest' }, principal);
+    }
     const imported = await store.get(first.id);
     assert.equal(imported.source.customer.address, fixtures[0]?.street);
     assert.deepEqual(imported.appointments, worked.appointments);
     assert.deepEqual(imported.instructions, worked.instructions);
     assert.equal(imported.sourceReview, false);
-    assert.equal(imported.sourceChanged, true);
-    assert.ok(imported.sourceWarnings.some((warning) => warning.includes('after booking')));
+    assert.equal(imported.sourceChanged, false);
+    assert.equal(imported.sourceImport?.pending, null);
     assert.equal(imported.routePoint, undefined);
     assert.equal(imported.addressGeography, undefined);
     assert.deepEqual(await store.get(dispatcherEdited.id), preserved);
@@ -192,7 +206,7 @@ void test('public fixture updates use isolated PostgreSQL, normal import, retain
     assert.equal(refreshed.addressGeography?.addressKey, destinationAddressKey(refreshed.source.customer));
     assert.equal(refreshed.addressGeography?.source, 'synthetic_fixture');
     assert.deepEqual(refreshed.appointments, worked.appointments);
-    assert.equal(refreshed.sourceChanged, true);
+    assert.equal(refreshed.sourceChanged, false);
     assert.deepEqual(await store.get(dispatcherEdited.id), preserved);
     assert.equal((await store.get(confirmed.id)).routePoint, undefined, 'A confirmed new-address entrance is preserved without adding a competing point');
     assert.ok((await store.get(confirmed.id)).addressGeography);

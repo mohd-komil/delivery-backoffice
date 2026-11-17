@@ -4,9 +4,11 @@ import test from 'node:test';
 import { crewRouteSchema, routeReturnSchema, type CrewRoute } from '../src/shared/api/route-contracts';
 import { groupRoutes } from '../src/_pages/routes/model/schedule';
 import { prepareRouteCommand } from '../src/_pages/route-detail/model/command';
+import { RouteContent } from '../src/_pages/route-detail/ui/route-detail-screen';
 import { RouteStopCard } from '../src/_pages/route-detail/ui/route-stop';
 import { RouteActionPanel } from '../src/_pages/route-detail/ui/route-actions';
 import { RouteStatus } from '../src/shared/ui/route-status';
+import { routeMessages } from '../src/shared/i18n/route-messages';
 import { renderLocalized } from './render-localized';
 
 const routeId = '10000000-0000-4000-8000-000000000001';
@@ -16,6 +18,7 @@ const vehicleId = '10000000-0000-4000-8000-000000000004';
 const appointmentId = '10000000-0000-4000-8000-000000000005';
 const deliveryId = '10000000-0000-4000-8000-000000000006';
 const person = { id: personId, name: 'DEMO Matteo' };
+const actions = { busy: null, run: () => Promise.resolve(true) };
 
 function fixture(): CrewRoute {
   return {
@@ -90,22 +93,122 @@ void test('stop card shows exact orders, work-end window and saved unloading ent
   assert.match(html, /query=37.5021%2C15.0872/);
   assert.match(html, new RegExp(`/visits/${appointmentId}`));
   assert.match(html, /Record departure/);
+  assert.match(html, /Unloading entrance/);
+  assert.doesNotMatch(html, /Powered by Geoapify/);
 });
 
-void test('departure is disabled by server capability and return stays distinct from missing reports and warehouse receipt', () => {
+void test('the next stop appears once above compact lists with Rome ETA and status labels', () => {
   const route = fixture();
-  const actions = { busy: null, run: () => Promise.resolve(true) };
-  const departure = renderLocalized(createElement(RouteActionPanel, { route, actions }));
+  const planned = route.stops[0];
+  assert.ok(planned);
+  const next = { ...planned, sequence: 2, confirmationStatus: 'customer_confirmed' as const };
+  const upcoming = {
+    ...planned, deliveryId: '10000000-0000-4000-8000-000000000007', appointmentId: '10000000-0000-4000-8000-000000000008',
+    sequence: 3, pickingName: 'DEMO/OUT/02', address: 'Via Etnea', eta: '2026-11-11T09:15:00Z', customerWindow: null,
+  };
+  const skipped = {
+    ...planned, deliveryId: '10000000-0000-4000-8000-000000000009', appointmentId: '10000000-0000-4000-8000-000000000010',
+    sequence: 4, pickingName: 'DEMO/OUT/04', address: 'Via Crociferi', eta: null, customerWindow: null,
+    status: 'cancelled' as const, skipped: true,
+  };
+  const past = {
+    ...planned, deliveryId: '10000000-0000-4000-8000-000000000011', appointmentId: '10000000-0000-4000-8000-000000000012',
+    sequence: 1, pickingName: 'DEMO/OUT/00', address: 'Via Vittorio Emanuele', eta: '2026-11-11T08:00:00Z',
+    status: 'completed' as const, confirmationStatus: 'customer_confirmed' as const, reported: true,
+  };
+  const live: CrewRoute = { ...route, status: 'in_progress', stops: [past, next, upcoming, skipped] };
+  const html = renderLocalized(createElement(RouteContent, { route: live, actions }));
+  const highlight = html.match(/<article\b[^>]*aria-label="Next stop"[^>]*>[\s\S]*?<\/article>/)?.[0];
+  assert.ok(highlight);
+  assert.match(highlight, /Piazza Duomo, Catania/);
+  assert.match(highlight, /09:30/);
+  assert.match(highlight, /Customer confirmed/);
+  assert.equal(html.split(`href="/visits/${next.appointmentId}"`).length - 1, 1);
+
+  const summaries = html.match(/<summary\b[^>]*>[\s\S]*?<\/summary>/g) ?? [];
+  const upcomingRow = summaries.find((summary) => summary.includes(upcoming.pickingName));
+  const skippedRow = summaries.find((summary) => summary.includes(skipped.pickingName));
+  const pastRow = summaries.find((summary) => summary.includes(past.pickingName));
+  assert.ok(upcomingRow);
+  assert.match(upcomingRow, /Via Etnea/);
+  assert.match(upcomingRow, /10:15/);
+  assert.match(upcomingRow, /Awaiting customer confirmation/);
+  assert.ok(skippedRow);
+  assert.ok(skippedRow.includes(routeMessages.en.unknown));
+  assert.ok(skippedRow.includes(routeMessages.en.skipped));
+  assert.ok(pastRow);
+  assert.match(pastRow, /09:00/);
+  assert.match(pastRow, /Completed/);
+  assert.ok(!summaries.some((summary) => summary.includes(next.pickingName)));
+});
+
+void test('geocoded route references retain attribution and never claim a confirmed unloading entrance in any locale', () => {
+  const original = fixture();
+  const geocoding = { provider: 'geoapify', precision: 'building', confidence: 1,
+    attribution: 'Synthetic datasource <img src=x onerror=alert(1)>', acceptance: 'automatic' };
+  const route = crewRouteSchema.parse({ ...original, stops: original.stops.map((stop) => ({ ...stop, geocoding })) });
+  const stop = route.stops[0]; assert.ok(stop);
+  assert.deepEqual(stop.geocoding, geocoding);
+  for (const locale of ['en', 'it', 'ru', 'uz'] as const) {
+    const html = renderLocalized(createElement(RouteStopCard, { stop, route, next: true }), locale);
+    assert.ok(html.includes(routeMessages[locale].addressPoint));
+    assert.ok(html.includes(routeMessages[locale].addressPointHint));
+    assert.ok(!html.includes(`${routeMessages[locale].entrance} ·`));
+    assert.match(html, /href="https:\/\/www\.geoapify\.com\/"/);
+    assert.match(html, /href="https:\/\/www\.openstreetmap\.org\/copyright"/);
+    assert.match(html, /Synthetic datasource &lt;img/);
+    assert.doesNotMatch(html, /<img/);
+    assert.match(html, /query=37.5021%2C15.0872/);
+  }
+  for (const invalid of [{ ...geocoding, confidence: 2 }, { ...geocoding, precision: 'exact_entrance' }, { ...geocoding, attribution: 'x'.repeat(2049) }]) {
+    assert.equal(crewRouteSchema.safeParse({ ...original, stops: original.stops.map((entry) => ({ ...entry, geocoding: invalid })) }).success, false);
+  }
+});
+
+void test('the route action dock follows lifecycle and server capabilities', () => {
+  const route = fixture();
+  const renderActions = (current: CrewRoute) => renderLocalized(createElement(RouteActionPanel, { route: current, actions }));
+  const departure = renderActions(route);
+  assert.match(departure, /data-route-action-bar/);
   assert.match(departure, /next customer has not confirmed/);
   assert.match(departure, /disabled=""/);
-  const returningRoute: CrewRoute = { ...route, status: 'in_progress', capabilities: {
+
+  const readyToDepart = renderActions({ ...route, capabilities: {
+    ...route.capabilities, canDepart: true, departBlocker: null, departBlockerCode: null,
+  } });
+  assert.match(readyToDepart, /data-route-action-bar/);
+  assert.ok(readyToDepart.includes(routeMessages.en.depart));
+  assert.doesNotMatch(readyToDepart, /disabled=""/);
+
+  const inProgress: CrewRoute = { ...route, status: 'in_progress', capabilities: {
     ...route.capabilities, canMarkReturned: true, returnBlocker: 'Some stops require reports', returnBlockerCode: 'ROUTE_UNFINISHED_STOPS',
   } };
-  const html = renderLocalized(createElement(RouteActionPanel, { route: returningRoute, actions }));
-  assert.match(html, /Some stops still need a report/);
-  assert.match(html, /We have returned/);
-  assert.match(html, /does not confirm that goods have been received at the warehouse/);
-  assert.match(html, /type="checkbox"/);
+  const blockedReturn = renderActions(inProgress);
+  assert.match(blockedReturn, /data-route-action-bar/);
+  assert.match(blockedReturn, /Some stops still need a report/);
+  assert.match(blockedReturn, /disabled=""/);
+  assert.ok(blockedReturn.includes(routeMessages.en.recordReturn), 'Actual return remains available when a planned report is missing');
+
+  const returning = renderActions({ ...inProgress, status: 'returning', capabilities: {
+    ...inProgress.capabilities, returnBlocker: null, returnBlockerCode: null,
+  } });
+  assert.match(returning, /data-route-action-bar/);
+  assert.match(returning, /aria-haspopup="dialog"/);
+  assert.ok(returning.includes(routeMessages.en.recordReturn));
+  assert.ok(!returning.includes(routeMessages.en.beginReturn));
+
+  const otherParticipant = renderActions({ ...inProgress, status: 'returning', capabilities: {
+    ...inProgress.capabilities, canMarkReturned: false, returnBlockerCode: 'ROUTE_RESPONSIBLE_REQUIRED',
+  } });
+  assert.match(otherParticipant, /data-route-action-bar/);
+  assert.match(otherParticipant, /disabled=""/);
+  assert.match(otherParticipant, /or assigned driver/);
+
+  const returned = renderActions({ ...route, status: 'returned' });
+  assert.doesNotMatch(returned, /data-route-action-bar|<button\b/);
+  assert.ok(returned.includes(routeMessages.en.warehouseSeparate));
+  assert.equal(renderActions({ ...route, status: 'closed' }), '');
+  assert.equal(renderActions({ ...route, status: 'cancelled' }), '');
 });
 
 void test('route lifecycle states and action panels render in all four languages', () => {
@@ -114,7 +217,17 @@ void test('route lifecycle states and action panels render in all four languages
   for (const locale of ['en', 'it', 'ru', 'uz'] as const) {
     const html = renderLocalized(createElement(RouteStatus, { status: 'published' }), locale);
     assert.ok(html.includes(expected[locale]));
-    const actionHtml = renderLocalized(createElement(RouteActionPanel, { route, actions: { busy: null, run: () => Promise.resolve(true) } }), locale);
+    const actionHtml = renderLocalized(createElement(RouteActionPanel, { route, actions }), locale);
     assert.doesNotMatch(actionHtml, /MISSING_MESSAGE|undefined/);
   }
+});
+
+void test('driverless routes identify the responsible participant while retaining legacy assigned-driver guidance', () => {
+  const original = fixture();
+  const legacy = { ...original, capabilities: { ...original.capabilities, departBlockerCode: 'ROUTE_RESPONSIBLE_REQUIRED' } };
+  const route = crewRouteSchema.parse({ ...legacy, resources: { ...legacy.resources, driver: { kind: 'none' } } });
+  const html = renderLocalized(createElement(RouteActionPanel, { route, actions }));
+  assert.match(html, /The route’s responsible participant records this action/);
+  assert.doesNotMatch(html, /assigned driver/);
+  assert.match(renderLocalized(createElement(RouteActionPanel, { route: legacy, actions })), /or assigned driver/);
 });

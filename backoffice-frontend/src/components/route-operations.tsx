@@ -119,7 +119,8 @@ function LiveRouteSummary({ data, onOpenDelivery }: { data: RouteOperations; onO
     <dl className="grid gap-3 rounded-lg border bg-muted/15 p-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
       <div><dt className="text-muted-foreground">{routes('crew')}</dt><dd>{data.resources.crew.name} · {data.resources.participants.map((person) => person.name).join(', ')}</dd></div>
       <div><dt className="text-muted-foreground">{routes('vehicle')}</dt><dd>{data.resources.vehicle.name}</dd></div>
-      <div><dt className="text-muted-foreground">{checks('driver')}</dt><dd>{driver.kind === 'participant' ? driver.person.name : driver.kind === 'external' ? driver.name : '—'}</dd></div>
+      <div><dt className="text-muted-foreground">{t('responsible')}</dt><dd>{data.routeResponsible.name}</dd></div>
+      {driver.kind !== 'none' ? <div><dt className="text-muted-foreground">{checks('driver')}</dt><dd>{driver.kind === 'participant' ? driver.person.name : driver.name}</dd></div> : null}
       <div><dt className="text-muted-foreground">{pub('departure')}</dt><dd>{data.resources.start.name} · {formatDateTime(data.review.timeline.departAt, locale)}</dd></div>
       <div><dt className="text-muted-foreground">{pub('return')}</dt><dd>{data.resources.end.name} · {data.review.timeline.returnAt ? formatDateTime(data.review.timeline.returnAt, locale) : '—'}</dd></div>
       <div><dt className="text-muted-foreground">{t('actualDeparture')}</dt><dd>{data.runtime.departed ? formatDateTime(data.runtime.departed.at, locale) : '—'}</dd></div>

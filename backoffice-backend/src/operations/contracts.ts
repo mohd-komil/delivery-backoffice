@@ -1,11 +1,21 @@
 import { z } from 'zod';
-import { AppointmentSchema, AssignmentSchema, DocumentSnapshotSchema, IdSchema, InstantSchema, InstructionsSchema, PersonSnapshotSchema, ServiceTypeSchema, SkillIdsSchema, SkillNameSchema, SourceItemSchema, TaskTemplateSchema, TextSchema, VehicleNameSchema, VehicleOperationalStatusSchema, VehicleOwnershipSchema, VehiclePlateSchema, WorkLinesInputSchema } from '../domain/model';
+import { AppointmentSchema, AssignmentSchema, DocumentSnapshotSchema, IdSchema, InstantSchema, InstructionsSchema, PersonSnapshotSchema, PriorWorkRevisionSchema, RequiredWorkInputSchema, ServiceTypeSchema, SignatureRefusalReviewDecisionSchema, SkillIdsSchema, SkillNameSchema, SourceItemSchema, TaskTemplateSchema, TextSchema, VehicleNameSchema, VehicleOperationalStatusSchema, VehicleOwnershipSchema, VehiclePlateSchema, WorkLinesInputSchema, WorkTimeRatesSchema } from '../domain/model';
 export const VersionSchema = z.object({version:z.number().int().positive()});
+const SignatureRefusalReviewCommandFields = VersionSchema.extend({ requestId: IdSchema.toLowerCase() }).shape;
+export const SignatureRefusalReviewInput = z.discriminatedUnion('decision', [
+  SignatureRefusalReviewDecisionSchema.options[0].extend(SignatureRefusalReviewCommandFields),
+  SignatureRefusalReviewDecisionSchema.options[1].extend(SignatureRefusalReviewCommandFields),
+]);
 export const DirectoryDeletionSchema = z.object({id:IdSchema,deleted:z.literal(true)}).strict();
 export const ChangeServiceInput = z.union([
   VersionSchema.extend({ defaultService: ServiceTypeSchema }).strict(),
   VersionSchema.extend({ sourceLineId: SourceItemSchema.shape.sourceLineId, service: ServiceTypeSchema.nullable() }).strict(),
 ]);
+export const ChangeWorkTimesInput = WorkTimeRatesSchema.extend({ version: z.number().int().positive(), sourceLineId: SourceItemSchema.shape.sourceLineId }).strict();
+export const ChangeWorkQuantitiesInput = RequiredWorkInputSchema.extend(VersionSchema.shape).strict();
+export const ConfirmPriorWorkInput = PriorWorkRevisionSchema.pick({ sourceLineId: true, deliveredMilli: true, installedMilli: true,
+  collectedMilli: true, sourceReference: true, reason: true, acknowledgeCurrentPicking: true })
+  .extend({ version: z.number().int().positive(), requestId: IdSchema }).strict();
 const VehicleFields={
   ownership:VehicleOwnershipSchema,name:VehicleNameSchema,plate:VehiclePlateSchema,
   providerName:VehicleNameSchema.nullable(),providerContact:z.string().trim().min(1).max(500).nullable(),

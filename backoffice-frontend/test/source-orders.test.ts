@@ -68,9 +68,12 @@ void test('line service changes target the order line even when both lines have 
     await waitFor(() => doc.querySelectorAll('.product-row').length === 2, 'service rows');
     const [first, second] = doc.querySelectorAll('.product-row');
     assert.ok(first && second);
-    assert.match(first.textContent ?? '', /DEMO\/SO\/FIRST.*Service protected by recorded or planned work.*Delivery1 done · 1 left.*Installation0 done · 2 left/s);
+    assert.match(first.textContent ?? '', /DEMO\/SO\/FIRST.*Service protected by recorded or planned work/s);
+    assert.deepEqual(operationQuantities(first, 'Delivery'), { Required: '2', Done: '1', Reserved: '0', Remaining: '1' });
+    assert.deepEqual(operationQuantities(first, 'Installation'), { Required: '2', Done: '0', Reserved: '0', Remaining: '2' });
     assert.equal(first.querySelector('button'), null, 'Recorded work locks the first line');
-    assert.match(second.textContent ?? '', /DEMO\/SO\/SECOND.*Collection0 done · 2 left/s);
+    assert.match(second.textContent ?? '', /DEMO\/SO\/SECOND/);
+    assert.deepEqual(operationQuantities(second, 'Collection'), { Required: '2', Done: '0', Reserved: '0', Remaining: '2' });
     await click(button(second, 'Edit line service'));
     const select = second.querySelector('select');
     assert.ok(select);
@@ -81,12 +84,24 @@ void test('line service changes target the order line even when both lines have 
     change.reply({
       ...api.detail,
       delivery: { ...api.detail.delivery, version: 2, servicePlan: { defaultService: 'delivery_installation', overrides: [] } },
-      lineServices: [firstLine, { ...secondLine, service: 'delivery_installation', inherited: true, remainingDeliveryMilli: 2000, remainingInstallationMilli: 2000, remainingCollectionMilli: 0 }],
+      lineServices: [firstLine, { ...secondLine, service: 'delivery_installation', inherited: true,
+        totalDeliveryMilli: 2000, totalInstallationMilli: 2000, totalCollectionMilli: 0,
+        remainingDeliveryMilli: 2000, remainingInstallationMilli: 2000, remainingCollectionMilli: 0,
+        availableDeliveryMilli: 2000, availableInstallationMilli: 2000, availableCollectionMilli: 0 }],
     });
     await waitFor(() => second.textContent?.includes('Uses default') === true, 'inherited service on the second line');
-    assert.match(first.textContent ?? '', /Delivery1 done · 1 left/);
-    assert.match(second.textContent ?? '', /Delivery0 done · 2 left/);
+    assert.equal(operationQuantities(first, 'Delivery').Done, '1');
+    assert.equal(operationQuantities(first, 'Delivery').Remaining, '1');
+    assert.equal(operationQuantities(second, 'Delivery').Done, '0');
+    assert.equal(operationQuantities(second, 'Delivery').Remaining, '2');
   } finally {
     await page.close();
   }
 });
+
+function operationQuantities(row: Element, name: string): Record<string, string> {
+  const heading = [...row.querySelectorAll('.overview-work-progress h5')].find((entry) => entry.textContent?.startsWith(`${name} ·`));
+  assert.ok(heading?.parentElement, `${name} progress missing`);
+  return Object.fromEntries([...heading.parentElement.querySelectorAll('dt')].map((term) =>
+    [term.textContent ?? '', term.nextElementSibling?.textContent ?? '']));
+}

@@ -1,6 +1,6 @@
 # Participants, Crews and Task templates
 
-All three directories support creating, viewing, editing and deleting records. Operators can view full details; administrators manage the records. In the interface, participant login and password-configuration status are visible only to administrators. The existing authenticated Backoffice API still returns login and password-configuration status to operators; password values and hashes are never returned or shown.
+All three directories support creating, viewing, editing and deleting records for both Backoffice administrators and operators, including Francesca. Both roles can manage participant skills and Crew sign-in access. The interface and authenticated API expose participant login and password-configuration status; password values and hashes are never returned or shown. Leaving the new-password field empty preserves the existing password. Backoffice user roles and unrelated administrative permissions remain unchanged.
 
 Use **View** from a row or template card for a read-only detail dialog. Existing edit forms retain their original version while refreshing, including unsaved input. **Delete** opens a named confirmation with Cancel focused initially. The record stays visible while deleting and on failure. A validated success removes it and displays a toast. An open confirmation cannot silently adopt a newer record version after Refresh.
 
@@ -9,6 +9,14 @@ Deletion is permanent and applies only to records never used in delivery plannin
 The existing authenticated HTTP client sends `DELETE /participants/:id`, `/crews/:id` or `/templates/:id` with `{version}` and validates `{id, deleted: true}` before changing local state. A pending directory read is cancelled after successful deletion, preventing an old response from reintroducing a deleted row. Known deletion conflicts are translated into English, Italian, Russian and Uzbek.
 
 Local checks: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`. Focused regressions: `node --import tsx --test test/directory-crud.test.ts`. Start the built Backoffice with `npm start` on port 3000 and the existing Docker API on port 3001.
+
+## Operator CRUD verification — 2026-11-13
+
+Francesca/operator now uses the same create, edit and delete actions for all three directories, including participant skill grants. Frontend typecheck, full typed lint and production build passed. The focused UI run passed **51/51** across `directory-crud`, `participants-staffing`, `skills`, `skills-vehicles-crud` and `vehicles`; the final directory-only run passed **12/12** after explicitly covering operator version/roster conflicts. Backend typecheck, typed lint, build, OpenAPI and **41/41** isolated PostgreSQL checks passed. The entire unrelated project test suite was not rerun for this permission change.
+
+Chrome on the customer-development workspace confirmed Francesca's operator role and New/Edit/Delete controls, populated edit forms and named deletion confirmations for Participants, Crews and Task templates. Confirmations were cancelled; existing data and credentials were preserved. Browser console warnings/errors were empty. Permanent deletion, successful writes, login/password preservation, anonymous/Crew denial and record-history constraints were exercised in automated UI/API tests.
+
+The customer-development backend was rebuilt with `./scripts/docker-odoo-start.ps1 -ProjectName delivery-odoo-customerdev -GeocodingSettingsFile .local/maps/geoapify.json` from the backend project. API and database are healthy. Backoffice is served at `http://127.0.0.1:3030` from `.local/odoo-integration/frontend-people-operator-20261113`, built with `NEXT_PUBLIC_API_URL=http://127.0.0.1:3031/api`. Run `node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3030` from that directory. The ignored runtime manifest records the current process. Screenshot: `../../.local/ui-verification/people-operator-crud.jpg`. No migration was needed and Odoo was not changed.
 
 ## Local acceptance — 2026-11-10
 

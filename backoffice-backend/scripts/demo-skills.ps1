@@ -1,15 +1,13 @@
-param([switch]$AssignSimoneExample)
+param([switch]$AssignSimoneExample, [switch]$CustomerDevelopment)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $projectRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$base='http://127.0.0.1:3001/api'
-$headers=@{Origin='http://127.0.0.1:3000'}
-$session=[Microsoft.PowerShell.Commands.WebRequestSession]::new()
-$health=Invoke-RestMethod -Uri ($base+'/health')
-if($health.database -ne 'delivery_backoffice' -or $health.sourceModel -ne 'synthetic Odoo teaching model'){throw 'Expected the isolated teaching backoffice API.'}
-$accounts=Get-Content -Raw -LiteralPath (Join-Path $projectRoot '.local/demo-accounts.json') | ConvertFrom-Json
-$user=Invoke-RestMethod -Uri ($base+'/auth/login') -Method Post -Headers $headers -WebSession $session -ContentType 'application/json' -Body (@{email=$accounts.admin.email;password=$accounts.admin.password}|ConvertTo-Json -Compress)
-if($user.role -ne 'admin'){throw 'Administrator account required.'}
+if($CustomerDevelopment -and $AssignSimoneExample){throw 'The legacy participant example belongs only to the synthetic teaching stand.'}
+. (Join-Path $PSScriptRoot 'demo-catalogue-context.ps1')
+$context=Get-DemoCatalogueContext -ProjectRoot $projectRoot -CustomerDevelopment:$CustomerDevelopment
+$base=$context.api
+$headers=$context.headers
+$session=$context.session
 try {
     $definitions=@(
         @{name='Product inspection';description='Identify and check products against delivery paperwork.'},
@@ -17,7 +15,9 @@ try {
         @{name='Integrity inspection';description='Inspect product condition and identify damage or missing parts.'},
         @{name='Furniture assembly';description='Assemble furniture according to the product instructions.'},
         @{name='Site cleanup';description='Leave the customer work area clean after the visit.'},
-        @{name='Packaging removal';description='Collect and separate packaging after delivery and assembly.'}
+        @{name='Packaging removal';description='Collect and separate packaging after delivery and assembly.'},
+        @{name='Fragile furniture handling';description='Demo capability: handle glass, mirrors, marble and delicate finishes with suitable protection.'},
+        @{name='Wall fixing';description='Demo capability: install the specified furniture fixings after checking the wall and product instructions.'}
     )
     $skills=Invoke-RestMethod -Uri ($base+'/skills') -WebSession $session
     if($null -eq $skills){$skills=@()}
@@ -64,7 +64,7 @@ try {
     $reportRoot=Join-Path $projectRoot '.local/skill-demo-runs'
     New-Item -ItemType Directory -Path $reportRoot -Force | Out-Null
     $reportName=[DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ')+'_'+[Guid]::NewGuid().ToString('N').Substring(0,8)+'.json'
-    [ordered]@{synthetic=$true;createdAt=[DateTime]::UtcNow.ToString('o');createdSkills=$created;catalogue=@($prepared|Select-Object id,name,enabled);changes=$changes} | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $reportRoot $reportName) -Encoding utf8
+    [ordered]@{synthetic=$true;api=$base;createdAt=[DateTime]::UtcNow.ToString('o');createdSkills=$created;catalogue=@($prepared|Select-Object id,name,enabled);changes=$changes} | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $reportRoot $reportName) -Encoding utf8
     Write-Output ('Synthetic skill catalogue ready: '+$prepared.Count+' skills; newly created '+$created+'; explicit example updates '+$changes.Count+'.')
     Write-Output 'No crew, visit, source, contact, login, password or signed history was changed.'
 } finally { Invoke-RestMethod -Uri ($base+'/auth/logout') -Method Post -Headers $headers -WebSession $session -ContentType 'application/json' -Body '{}' | Out-Null }

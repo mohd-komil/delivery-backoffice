@@ -2,7 +2,8 @@ import { ConflictException } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 import { z } from 'zod';
 import { rows } from '../database/database';
-import { AppointmentSchema, IdSchema } from '../domain/model';
+import { AppointmentSchema, IdSchema, QuantityResultSchema, type VisitResult } from '../domain/model';
+import { DomainError } from '../domain/rules';
 
 /** Raw intervals, never pre-padded. An active route owns its exact children only. */
 export const RESOURCE_BOOKINGS_SQL = `
@@ -33,6 +34,36 @@ export async function appointmentRoute(manager: EntityManager, appointmentId: st
     `SELECT p.id,p.status FROM route_stop s JOIN route_publication p ON p.id=s.route_id
      WHERE s.appointment_id=$1 AND s.active AND p.status<>'cancelled'`, [appointmentId]);
   return route;
+}
+
+export async function assertSignatureRefusalCorrectionPreservesCargo(manager: EntityManager, appointmentId: string,
+  original: readonly VisitResult['quantities'][number][], corrected: readonly VisitResult['quantities'][number][]) {
+  const route = await appointmentRoute(manager, appointmentId);
+  if (!route) return;
+  const quantities = new Map(corrected.map((line) => [line.sourceLineId, line]));
+  const changesCargo = original.some((line) => {
+    const next = quantities.get(line.sourceLineId);
+    return next && (line.deliveredMilli !== next.deliveredMilli || (line.collectedMilli ?? 0) !== (next.collectedMilli ?? 0));
+  });
+  if (!changesCargo) return;
+  if (route.status === 'closed') {
+    throw new DomainError('SIGNATURE_REFUSAL_CARGO_CONFLICT', 'The correction would change the confirmed cargo of a closed route');
+  }
+  const receipts = await rows(manager, z.object({
+    sourceLineId: QuantityResultSchema.shape.sourceLineId,
+    quantityMilli: QuantityResultSchema.shape.deliveredMilli,
+  }), `SELECT item->'sourceLineId' AS "sourceLineId", item->'quantityMilli' AS "quantityMilli"
+    FROM route_publication p
+    CROSS JOIN LATERAL jsonb_array_elements(p.runtime->'warehouseReceipts') receipt
+    CROSS JOIN LATERAL jsonb_array_elements(receipt->'items') item
+    WHERE p.id=$1 AND item->>'appointmentId'=$2 AND item->>'kind'='collection'`, [route.id, appointmentId]);
+  const received = new Map<number, number>();
+  for (const { sourceLineId, quantityMilli } of receipts) {
+    received.set(sourceLineId, (received.get(sourceLineId) ?? 0) + quantityMilli);
+  }
+  if (corrected.some((line) => (line.collectedMilli ?? 0) < (received.get(line.sourceLineId) ?? 0))) {
+    throw new DomainError('SIGNATURE_REFUSAL_CARGO_CONFLICT', 'The corrected collection quantity cannot be lower than the recorded warehouse receipts');
+  }
 }
 
 export async function assertStandaloneAppointment(manager: EntityManager, appointmentId: string): Promise<void> {

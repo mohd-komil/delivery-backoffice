@@ -66,8 +66,8 @@ export class CrewExecution {
       command.authorize?.(appointment, actor);
     });
     const { appointment } = requireCurrentAssignment(delivery, appointmentId, principal);
-    const { id: deliveryId, source, instructions, version, appointments, servicePlan,sourceReview, issues, workHolds } = delivery;
-    return this.visits.describe({ deliveryId, source, instructions, version, appointment, appointments, servicePlan,sourceReview, issues, workHolds }, principal);
+    const { id: deliveryId, source, instructions, version, appointments, servicePlan, priorWorkRevisions,sourceReview, sourceImport, issues, workHolds } = delivery;
+    return this.visits.describe({ deliveryId, source, instructions, version, appointment, appointments, servicePlan, priorWorkRevisions,sourceReview, sourceImport, issues, workHolds }, principal);
   }
 
   async start(id: string, input: unknown, request: unknown) {
@@ -96,7 +96,8 @@ export class CrewExecution {
   }
 
   async finish(id: string, input: unknown, request: unknown) {
-    const { version, requestId, summary, quantities, itemChecks, incompleteWork, actualStart, customerSignature, crewSignature, photos: submittedPhotos } = CrewFinishInput.parse(input);
+    const { version, requestId, summary, quantities, itemChecks, incompleteWork, actualStart, customerSignature, signatureRefusal,
+      crewSignature, photos: submittedPhotos } = CrewFinishInput.parse(input);
     const principal = crewActor(request);
     const location = await this.visits.assignedRow(id, principal);
     authorizeFinish(location.appointment, assignedActor(location.appointment, principal));
@@ -114,10 +115,11 @@ export class CrewExecution {
         requestId,
         action: 'execution.crew_reported',
         data: {
-          summary, quantities, itemChecks, incompleteWork, actualStart, customerSignature, crewSignature,
+          summary, quantities, itemChecks, incompleteWork, actualStart, customerSignature, signatureRefusal, crewSignature,
           photos: photos.map(({ file, digest, sourceLineId }) => ({ name: file.name, digest, sourceLineId })),
         },
-        audit: { resultId, source: 'crew_frontoffice', photoIds, incompleteOperationCount: incompleteWork?.length ?? 0 },
+        audit: { resultId, source: 'crew_frontoffice', photoIds, incompleteOperationCount: incompleteWork?.length ?? 0,
+          ...(signatureRefusal ? { signatureRefusal } : {}) },
         authorize: authorizeFinish,
         apply: async (delivery, manager, appointment, actor) => {
           requireInProgressCrewVisit(delivery, appointment.id, actor);
@@ -130,7 +132,7 @@ export class CrewExecution {
           const documents = await this.files.crewDocuments(delivery.id, appointment.id, delivery.source.items.map(({ sourceLineId }) => sourceLineId), null, manager);
           const documentSnapshot = documents.map((document) => DocumentSnapshotSchema.strip().parse(document));
           const next = finishCrewVisit(delivery, appointment.id, actor, {
-            id: resultId, summary, quantities, itemChecks, incompleteWork, customerSignature, crewSignature, photos, documentSnapshot,
+            id: resultId, summary, quantities, itemChecks, incompleteWork, customerSignature, signatureRefusal, crewSignature, photos, documentSnapshot,
           }, start, new Date().toISOString());
           const issueLinks = next.appointments.find(({ id }) => id === appointment.id)?.results.find(({ id }) => id === resultId)?.issueLinks ?? [];
           // The bytes are private until the file metadata, result and command receipt commit together.

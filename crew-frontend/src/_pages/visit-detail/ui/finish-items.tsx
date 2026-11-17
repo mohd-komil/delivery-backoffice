@@ -1,5 +1,8 @@
 'use client';
 
+import { Combobox } from '@/shared/ui/combobox';
+
+
 import { useTranslations } from 'next-intl';
 import { useId, useState, type ReactNode } from 'react';
 import type { VisitDetail } from '@/shared/api/contracts';
@@ -37,28 +40,28 @@ function ItemCheckFields({ lineId, itemHeading, itemLabel, error, clearError, is
     <div className="grid gap-2 px-2.5 pb-2.5" onChange={() => { if (error) clearError(); }}>
       <label className="field">
         <span>{t('finishItemCondition')}</span>
-        <select id={`${id}-condition`} aria-label={`${itemLabel} · ${t('finishItemCondition')}`} name={itemCheckFieldName(lineId, 'status')} value={status} onChange={(event)=>setStatus(event.currentTarget.value)} aria-invalid={error?.reason === 'status' || undefined}
+        <Combobox id={`${id}-condition`} aria-label={`${itemLabel} · ${t('finishItemCondition')}`} name={itemCheckFieldName(lineId, 'status')} value={status} onChange={(event)=>setStatus(event.currentTarget.value)} aria-invalid={error?.reason === 'status' || undefined}
           aria-describedby={error?.reason === 'status' ? `${id}-error` : undefined}>
           <option value="">{t('finishItemUnchecked')}</option>
           <option value="ok">{t('finishItemOk')}</option>
           <option value="problem">{t('finishItemProblem')}</option>
-        </select>
+        </Combobox>
       </label>
       {status==='problem'?<>
         <label className="field"><span>{t('issueType')}</span>
-          <select id={`${id}-problem-type`} aria-label={`${itemLabel} · ${t('issueType')}`} name={itemCheckFieldName(lineId,'problemType')} value={linkedIssue?.type??problemType} disabled={Boolean(linkedIssue)}
+          <Combobox id={`${id}-problem-type`} aria-label={`${itemLabel} · ${t('issueType')}`} name={itemCheckFieldName(lineId,'problemType')} value={linkedIssue?.type??problemType} disabled={Boolean(linkedIssue)}
             onChange={(event)=>{const value=issueTypes.find((type)=>type===event.currentTarget.value);if(value)setProblemType(value);}}>
             {issueTypes.map((type)=><option key={type} value={type}>{t(issueTypeLabels[type])}</option>)}
-          </select>
+          </Combobox>
           {linkedIssue?<input type="hidden" name={itemCheckFieldName(lineId,'problemType')} value={linkedIssue.type}/>:null}
         </label>
         {matchingIssues.length||linkedIssueId?<label className="field"><span>{t('finishExistingIssue')}</span>
-          <select id={`${id}-existing-issue`} aria-label={`${itemLabel} · ${t('finishExistingIssue')}`} name={itemCheckFieldName(lineId,'linkedIssueId')} value={linkedIssueId} required={matchingIssues.length>1}
+          <Combobox id={`${id}-existing-issue`} aria-label={`${itemLabel} · ${t('finishExistingIssue')}`} name={itemCheckFieldName(lineId,'linkedIssueId')} value={linkedIssueId} required={matchingIssues.length>1}
             onChange={(event)=>setLinkedIssueId(event.currentTarget.value)}>
             <option value="">{t('finishNewIssue')}</option>
             {linkedIssueId&&!linkedIssue?<option value={linkedIssueId} disabled>{t('finishExistingIssueUnavailable')}</option>:null}
             {matchingIssues.map((issue)=><option key={issue.id} value={issue.id}>{t(issueTypeLabels[issue.type])} · {issue.description}</option>)}
-          </select>
+          </Combobox>
         </label>:null}
         <p className="text-muted">{t('finishProblemCreatesIssue')}</p>
       </>:null}

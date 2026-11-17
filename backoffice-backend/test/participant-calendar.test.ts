@@ -13,6 +13,7 @@ import { AppointmentSchema, createDelivery, DeliverySchema, type Appointment, ty
 import { instantiateTask, planVisitWork, raiseReturnRequest, recordExecution } from '../src/domain/rules';
 import { hashPassword } from '../src/identity/identity';
 import { ParticipantCalendarSchema } from '../src/operations/contracts';
+import { DeliveryGeographySchema } from '../src/domain/delivery-geography';
 
 class CalendarDatabase extends Database {
   override readonly source:DataSource;
@@ -56,7 +57,7 @@ void test('participant calendar projects saved assignment snapshots through real
         cancellationReason:status==='cancelled'?'DEMO cancellation':null,returnRequestId:null,assignments,results:[]};
     }
     let delivery=createDelivery({pickingId:1,pickingName:'PARTICIPANT/CALENDAR/DEMO/1',saleOrderId:1,saleOrderName:'DEMO/SO/1',sourceState:'assigned',salesTeam:'MOHD MESSINA',
-      customer:{id:1,name:'DEMO calendar customer',address:'DEMO delivery address',city:'Messina',country:'IT',phones:['+390000000001'],email:null,contact:null},
+      customer:{id:1,name:'DEMO calendar customer',address:'DEMO delivery address',city:'Messina',province:'ME',postalCode:'09810',country:'IT',phones:['+390000000001'],email:null,contact:null},
       items:[{sourceLineId:10,productId:1,name:'DEMO item',description:null,quantity:1,uom:'unit',configuration:null,ambient:null,notes:null,photoUrl:null}],
       serviceType:'delivery_only',estimatedMinutes:null,notes:'DEMO PRIVATE SOURCE NOTE'},randomUUID());
     const before=appointment('07:00','08:00'); const after=appointment('12:00','13:00');
@@ -139,9 +140,10 @@ void test('participant calendar projects saved assignment snapshots through real
         const personal=await calendar(personId,cookie,query);
         assert.deepEqual(new Set(personal.entries.map((entry)=>entry.appointmentId)),new Set(delivery.appointments.map((entry)=>entry.id)));
         const reply=await get('/calendar?'+query,cookie);assert.equal(reply.status,200);
-        const general=z.array(z.object({deliveryId:z.string().uuid(),pickingName:z.string(),customerName:z.string(),appointment:AppointmentSchema}).strict()).parse(reply.raw);
+        const general=z.array(z.object({deliveryId:z.string().uuid(),pickingName:z.string(),customerName:z.string(),geography:DeliveryGeographySchema,appointment:AppointmentSchema}).strict()).parse(reply.raw);
         assert.deepEqual(new Set(general.map((entry)=>entry.appointment.id)),new Set(delivery.appointments.map((entry)=>entry.id)));
         assert.ok(general.every((entry)=>entry.deliveryId===delivery.id));
+        for(const entry of general) assert.deepEqual(entry.geography,{city:'Messina',province:'ME',postalCode:'09810',source:'odoo'},'Calendar preserves the current source geography and leading postal-code zero');
       }
     });
     await context.test('actual UUID membership selects only the matching saved assignment, never the current default roster or name',async()=>{

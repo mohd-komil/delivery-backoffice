@@ -58,6 +58,7 @@ export const visitDetailSchema = visitSchema.extend({
     })),
   }).nullable(),
   actualStartedAt: z.iso.datetime({ offset: true }).nullable(),
+  signatureRefusalStatus: z.enum(['pending', 'approved', 'corrected']).optional(),
   failedAttempt: z.object({
     reason: z.string(),
     at: z.iso.datetime({ offset: true }),

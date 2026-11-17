@@ -12,7 +12,7 @@ import { formatDateTime } from '@/lib/time';
 import { ActionForm, ChoiceGroup, Field, Notice, Pending, textField } from './ui';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
-import { Dialog, DialogContent, DialogTitle } from './ui/dialog';
+import { Dialog, DialogContent, DialogTitle, useDialogClose } from './ui/dialog';
 import { RecordedSkillBadges } from './skill-choices';
 
 export function useVisitAvailability(deliveryId: string, appointment: Pick<Appointment, 'id' | 'startsAt' | 'endsAt'>, refreshKey = 0) {
@@ -96,6 +96,7 @@ function fromAppointment(appointment: Appointment): CrewStaffSelection[] {
 
 export function StaffingEditor({ deliveryId, appointmentId, onClose, onChanged }: { deliveryId: string; appointmentId: string; onClose: () => void; onChanged: () => void }) {
   const t = useTranslations('directory');
+  const dialog = useDialogClose(onClose);
   const locale = useLocale();
   const [detail, setDetail] = useState<DeliveryDetail | null>(null);
   const [skills, setSkills] = useState<Skill[] | null>(null);
@@ -123,7 +124,7 @@ export function StaffingEditor({ deliveryId, appointmentId, onClose, onChanged }
       setDetail(saved); setFailureState(null); setSettled(revision); onChanged(); return saved.delivery.version;
     } finally { setSaving(false); }
   }
-  return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}><DialogContent className="dialog !max-w-[760px]" aria-describedby={undefined}><div className="section-title"><div><DialogTitle asChild><h2>{t('editVisitStaff')}</h2></DialogTitle><p className="small muted">{detail?.delivery.source.pickingName ?? t('loadingDelivery')}</p></div><div className="flex gap-2"><button className="button secondary small" disabled={loading || saving} onClick={() => setRevision((value) => value + 1)}>{t('refreshVisit')}</button><button className="icon-button" aria-label={t('closeStaffing')} onClick={onClose}>×</button></div></div><div className="mb-3 flex h-10 items-center text-xs" role="status">{error ? <span className="text-destructive">{error}</span> : detail && loading ? <span className="muted">{t('refreshingVisit')}</span> : null}</div>{!detail && loading ? <Pending /> : null}{detail && appointment && skills ? <StaffingForm key={appointmentId} detail={detail} appointment={appointment} skills={skills} refreshKey={revision} loadingVisit={loading} onSave={save} /> : detail ? <Notice tone="error">{t('appointmentMissing')}</Notice> : null}</DialogContent></Dialog>;
+  return <Dialog open={dialog.open} onOpenChange={(open) => { if (!open) dialog.close(); }}><DialogContent className="dialog !max-w-[760px]" aria-describedby={undefined}><div className="section-title"><div><DialogTitle asChild><h2>{t('editVisitStaff')}</h2></DialogTitle><p className="small muted">{detail?.delivery.source.pickingName ?? t('loadingDelivery')}</p></div><div className="flex gap-2"><button className="button secondary small" disabled={loading || saving} onClick={() => setRevision((value) => value + 1)}>{t('refreshVisit')}</button><button className="icon-button" aria-label={t('closeStaffing')} onClick={dialog.close}>×</button></div></div><div className="mb-3 flex h-10 items-center text-xs" role="status">{error ? <span className="text-destructive">{error}</span> : detail && loading ? <span className="muted">{t('refreshingVisit')}</span> : null}</div>{!detail && loading ? <Pending /> : null}{detail && appointment && skills ? <StaffingForm key={appointmentId} detail={detail} appointment={appointment} skills={skills} refreshKey={revision} loadingVisit={loading} onSave={save} /> : detail ? <Notice tone="error">{t('appointmentMissing')}</Notice> : null}</DialogContent></Dialog>;
 }
 
 function StaffingForm({ detail, appointment, skills, refreshKey, loadingVisit, onSave }: { detail: DeliveryDetail; appointment: Appointment; skills: Skill[]; refreshKey: number; loadingVisit: boolean; onSave: (version: number, rows: CrewStaffSelection[], reason: string) => Promise<number> }) {

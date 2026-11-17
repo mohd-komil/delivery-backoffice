@@ -1,11 +1,14 @@
 'use client';
 
+import { Combobox } from './ui/combobox';
+
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { z } from 'zod';
 import { apiRequest, errorMessage, mutate } from '@/lib/api';
 import { crewSchema, participantSchema, vehicleSchema, type Crew, type Participant, type Vehicle } from '@/lib/contracts';
-import { nearestRoutePoint, parseRoutePin, routeWorkMinutes, routeDraftInputSchema, routeDraftSchema, routeJobsSchema, routeListSchema, routePreviewSchema, type RouteDraft, type RouteJob, type RouteList, type RouteManualContext, type RoutePinFields, type RoutePreview } from '@/lib/route-drafts';
+import { nearestRoutePoint, parseRoutePin, routeWorkMinutes, routeDraftInputSchema, routeDraftSchema, routeJobsSchema, routeListSchema, routePlanningWithoutDriver, routePreviewSchema, type RouteDraft, type RouteJob, type RouteList, type RouteManualContext, type RoutePinFields, type RoutePreview } from '@/lib/route-drafts';
 import { formatDateTime } from '@/lib/time';
 import type { EntranceReviewData } from '@/lib/delivery-entrance';
 import { DateTimeInput } from './date-time-fields';
@@ -55,7 +58,7 @@ function draftFields(catalogs: Catalogs, draft?: RouteDraft): RouteFields {
       ...(pin ? { pin: { latitude: String(pin.latitude), longitude: String(pin.longitude), addressKey: pin.addressKey } } : {}),
     })) ?? [],
     estimates: draft?.manualEstimates.map((leg) => ({ ...leg, minutes: String(leg.minutes) })) ?? [],
-    planning: draft?.planning ?? emptyRoutePlanning,
+    planning: draft?.planning ? routePlanningWithoutDriver(draft.planning) : emptyRoutePlanning,
   };
 }
 
@@ -140,10 +143,10 @@ export function RouteDrafts({ initialDraftId = '', onOpenDelivery }: { initialDr
     {catalogs ? <>
       <Card className="mb-4 flex flex-wrap items-end gap-3 p-4 [&_.field]:my-0">
         <div className="min-w-0 flex-1"><Field label={t('draft')}>
-          <select value={selectedId} onChange={(event) => { setSelectedId(event.target.value); setEditorKey((value) => value + 1); }}>
+          <Combobox value={selectedId} onChange={(event) => { setSelectedId(event.target.value); setEditorKey((value) => value + 1); }}>
             <option value="">{t('unsavedDraft')}</option>
             {catalogs.list.drafts.map((draft) => <option key={draft.id} value={draft.id}>{t('draftOption', { name: draft.name, count: draft.stopCount })} · {formatDateTime(draft.departAt, locale)}</option>)}
-          </select>
+          </Combobox>
         </Field></div>
         <Button type="button" variant="outline" onClick={() => { setSelectedId(''); setEditorKey((value) => value + 1); }}>{t('newDraft')}</Button>
       </Card>
@@ -193,6 +196,7 @@ function RouteEditor({ catalogs, revision, route, onSaved, onEntranceChanged, on
     }
   }
   const { points } = catalogs.list;
+  const referencePoints = [previewState.value?.locations?.start, previewState.value?.locations?.end, route?.locations?.start, route?.locations?.end];
   const pointIds = [fields.startPointId, ...fields.stops.map((stop) => stop.deliveryId), fields.endPointId];
   const legs = pointIds.slice(1).map((to, index) => ({ from: pointIds[index] ?? '', to })).filter((leg) => leg.from && leg.to);
   const manualEstimates = fields.estimates
@@ -230,7 +234,7 @@ function RouteEditor({ catalogs, revision, route, onSaved, onEntranceChanged, on
 
   const pointName = (id: string) => {
     const job = jobs.get(id);
-    return points.find((point) => point.id === id)?.name ?? (job ? [job.customerName, job.pickingName].filter(Boolean).join(' · ') : t('unknownStop'));
+    return points.find((point) => point.id === id)?.name ?? referencePoints.find((point) => point?.id === id)?.name ?? (job ? [job.customerName, job.pickingName].filter(Boolean).join(' · ') : t('unknownStop'));
   };
   const mapPoints: RouteMapPoint[] = [
     { id: fields.startPointId, label: pointName(fields.startPointId), point: points.find(({ id }) => id === fields.startPointId) ?? null, kind: 'start' },
@@ -341,7 +345,10 @@ function RouteEditor({ catalogs, revision, route, onSaved, onEntranceChanged, on
   const selectedIds = fields.stops.map((stop) => stop.deliveryId);
   const visiblePreview = previewState.value;
   const previewStale = !previewCurrent || !inputValid || !!previewState.error;
-  const savedInput = route ? routeDraftInputSchema.safeParse(route) : null;
+  const savedInput = route ? routeDraftInputSchema.safeParse({
+    ...route,
+    planning: route.planning ? routePlanningWithoutDriver(route.planning) : undefined,
+  }) : null;
   const publicationDirty = !inputValid || !savedInput?.success || JSON.stringify(savedInput.data) !== saveKey;
   return <><div hidden={published}><ActionForm disabled={published} dataVersion={route?.version} onResetDraft={() => setFields(draftFields(catalogs, route))} submitLabel={t('save')} successMessage={t('saved')} submitDisabled={!inputValid} onSubmit={save}>
     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] [&_.field]:my-0">
@@ -351,10 +358,10 @@ function RouteEditor({ catalogs, revision, route, onSaved, onEntranceChanged, on
           <Field label={t('name')}><Input value={fields.name} maxLength={120} required onChange={(event) => update('name', event.target.value)} /></Field>
           <DateTimeInput name="departAt" label={t('departure')} initialInstant={route?.departAt} onInstantChange={(value) => update('departAt', value)} />
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label={t('start')}><select required value={fields.startPointId} onChange={(event) => { pointsChosen.current = true; update('startPointId', event.target.value); }}>{points.map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</select></Field>
-            <Field label={t('returnWarehouse')}><select required value={fields.endPointId} onChange={(event) => { pointsChosen.current = true; update('endPointId', event.target.value); }}>{points.map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</select></Field>
-            <Field label={t('crew')}><select value={fields.crewId} onChange={(event) => update('crewId', event.target.value)}><option value="">{t('unassigned')}</option>{catalogs.crews.filter((crew) => crew.enabled || crew.id === fields.crewId).map((crew) => <option key={crew.id} value={crew.id}>{crew.name}</option>)}</select></Field>
-            <Field label={t('vehicle')}><select value={fields.vehicleId} onChange={(event) => update('vehicleId', event.target.value)}><option value="">{t('unassigned')}</option>{catalogs.vehicles.filter((vehicle) => (vehicle.enabled && vehicle.operationalStatus === 'available') || vehicle.id === fields.vehicleId).map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>)}</select></Field>
+            <Field label={t('start')}><Combobox required value={fields.startPointId} onChange={(event) => { pointsChosen.current = true; update('startPointId', event.target.value); }}>{!points.some((point) => point.id === fields.startPointId) ? <option value={fields.startPointId} disabled>{pointName(fields.startPointId)} · {t('unavailable')}</option> : null}{points.map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</Combobox></Field>
+            <Field label={t('returnWarehouse')}><Combobox required value={fields.endPointId} onChange={(event) => { pointsChosen.current = true; update('endPointId', event.target.value); }}>{!points.some((point) => point.id === fields.endPointId) ? <option value={fields.endPointId} disabled>{pointName(fields.endPointId)} · {t('unavailable')}</option> : null}{points.map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</Combobox></Field>
+            <Field label={t('crew')}><Combobox value={fields.crewId} onChange={(event) => update('crewId', event.target.value)}><option value="">{t('unassigned')}</option>{catalogs.crews.filter((crew) => crew.enabled || crew.id === fields.crewId).map((crew) => <option key={crew.id} value={crew.id}>{crew.name}</option>)}</Combobox></Field>
+            <Field label={t('vehicle')}><Combobox value={fields.vehicleId} onChange={(event) => update('vehicleId', event.target.value)}><option value="">{t('unassigned')}</option>{catalogs.vehicles.filter((vehicle) => (vehicle.enabled && vehicle.operationalStatus === 'available') || vehicle.id === fields.vehicleId).map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>)}</Combobox></Field>
           </div>
           <p className="text-xs text-muted-foreground">{t('pointHelp')}</p>
           <div className="grid gap-2 rounded-md border border-info-foreground/30 bg-info p-3">

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { AppointmentSchema, IdSchema, InstantSchema, ResponsibleParticipantSchema as OperatorSnapshotSchema, QuantityResultSchema, TextSchema, TransportAllocationSchema } from '../domain/model';
 import { RouteDraftInputSchema, RoutePinSchema } from './contracts';
 import { PublicationReviewSchema, PublicationSnapshotSchema, PublicationStatusSchema } from './publication-contracts';
+import { GeocodingMetadataSchema } from './geocoding-contracts';
 
 const Id = IdSchema.toLowerCase();
 const WorkMilliSchema = QuantityResultSchema.shape.deliveredMilli;
@@ -51,6 +52,7 @@ export const RouteLiveStopSchema = z.object({
   deliveryId: IdSchema, appointmentId: IdSchema, sequence: z.number().int().positive(), source: z.enum(['created', 'attached']),
   pickingName: z.string(), customerName: z.string(), address: z.string().nullable(), city: z.string().nullable(),
   entrance: RoutePinSchema.nullable(), customerWindow: RouteDraftInputSchema.shape.stops.element.shape.customerWindow.nullable(),
+  geocoding: GeocodingMetadataSchema.optional(),
   eta: InstantSchema.nullable(), workStartAt: InstantSchema.nullable(), workEndAt: InstantSchema.nullable(),
   status: AppointmentSchema.shape.status, confirmationStatus: z.enum(['customer_confirmed', 'awaiting_customer_confirmation']).nullable(),
   responsibleParticipant: AppointmentSchema.shape.responsibleParticipant.nullable(),

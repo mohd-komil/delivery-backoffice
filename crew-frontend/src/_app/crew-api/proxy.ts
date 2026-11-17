@@ -2,7 +2,10 @@ import { z } from 'zod';
 
 const authCookie = 'crew_session';
 const noStore = { 'Cache-Control': 'private, no-store' };
-const backendOrigin = z.enum(['http://127.0.0.1:3001', 'http://localhost:3001']);
+const backendOrigin = z.enum([
+  'http://127.0.0.1:3001', 'http://localhost:3001',
+  'http://127.0.0.1:3031', 'http://localhost:3031',
+]);
 const isolatedBackendOrigin = z.literal('http://127.0.0.1:3011');
 const commandBodyLimit = 4096;
 const attemptFailureBodyLimit = 16 * 1024; // Allow a 2,000-character reason with JSON escapes.

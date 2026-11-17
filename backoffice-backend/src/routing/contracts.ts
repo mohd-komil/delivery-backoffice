@@ -36,6 +36,7 @@ export const RouteCustomerWindowSchema = z.union([
 ]);
 export const RouteWorkDurationSourceSchema = z.enum(['manual', 'remaining_estimate', 'unknown']);
 export const RoutePlanningSchema = z.object({
+  availabilityMode: z.enum(['manual', 'shared_calendar']).optional(),
   participantIds: z.array(IdSchema).max(100).refine((ids) => new Set(ids.map((id) => id.toLowerCase())).size === ids.length, 'Select each participant once'),
   participantAvailability: z.array(z.object({
     participantId: IdSchema,
@@ -46,10 +47,11 @@ export const RoutePlanningSchema = z.object({
     'Enter availability once per participant'),
   vehicleAvailability: RouteIntervalSchema.nullable(),
   driver: z.union([
+    z.object({ kind: z.literal('none') }).strict(),
     z.object({ kind: z.literal('unknown') }).strict(),
     z.object({ kind: z.literal('participant'), participantId: IdSchema }).strict(),
     z.object({ kind: z.literal('external'), name: z.string().trim().min(1).max(200), availability: RouteIntervalSchema.nullable() }).strict(),
-  ]),
+  ]).default({ kind: 'none' }),
   transferBufferMinutes: z.number().int().min(0).max(240).nullable(),
 }).strict();
 export const RouteSuggestionObjectiveSchema = z.enum(['travel_minutes', 'return_time']);
@@ -78,6 +80,12 @@ export const RouteDraftInputSchema = z.object({
   planning: RoutePlanningSchema.optional(),
 }).strict();
 export type RouteDraftInput = z.infer<typeof RouteDraftInputSchema>;
+
+/** Legacy snapshots keep their driver. Current planning always reserves the vehicle and actual crew. */
+export function withoutRouteDriver(input: RouteDraftInput): RouteDraftInput {
+  return input.planning ? { ...input, planning: { ...input.planning, driver: { kind: 'none' } } } : input;
+}
+
 export const RouteCreateInputSchema = RouteDraftInputSchema.extend({ requestId: IdSchema });
 export const RouteUpdateInputSchema = RouteDraftInputSchema.extend({ version: z.number().int().positive() });
 export const RoutePreviewInputSchema = RouteDraftInputSchema.extend({ useGoogleRoads: z.boolean().optional() });

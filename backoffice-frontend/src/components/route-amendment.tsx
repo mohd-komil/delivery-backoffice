@@ -1,11 +1,14 @@
 'use client';
 
+import { Combobox } from './ui/combobox';
+
+
 import { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { ApiError, errorMessage, mutate } from '@/lib/api';
 import type { Crew, Participant, Vehicle } from '@/lib/contracts';
-import type { RouteDraftInput, RoutePoint } from '@/lib/route-drafts';
+import { routePlanningWithoutDriver, type RouteDraftInput, type RoutePoint } from '@/lib/route-drafts';
 import { routeAmendReviewInputSchema, routeAmendReviewSchema, type RouteAmendReview, type RouteAmendReviewInput, type RouteCommand, type RouteOperations } from '@/lib/route-operations';
 import { Field, Notice } from './ui';
 import { Button } from './ui/button';
@@ -18,7 +21,11 @@ import { RouteTimeline } from './route-planning-panels';
 type Catalogs = { participants: readonly Participant[]; crews: readonly Crew[]; vehicles: readonly Vehicle[]; points: readonly RoutePoint[] };
 
 function amendmentPlan(data: RouteOperations): RouteDraftInput {
-  return { ...data.draft, stops: data.draft.stops.map((stop) => ({ ...stop, appointmentId: data.stops.find((entry) => entry.deliveryId === stop.deliveryId)?.appointmentId })) };
+  return {
+    ...data.draft,
+    planning: data.draft.planning ? routePlanningWithoutDriver(data.draft.planning) : emptyRoutePlanning,
+    stops: data.draft.stops.map((stop) => ({ ...stop, appointmentId: data.stops.find((entry) => entry.deliveryId === stop.deliveryId)?.appointmentId })),
+  };
 }
 function responsibility(data: RouteOperations): Record<string, string> {
   return Object.fromEntries(data.stops.map((stop) => [stop.appointmentId, stop.responsibleParticipant?.id ?? '']));
@@ -34,7 +41,6 @@ export function RouteAmendment({ data, catalogs, revision, disabled, command }: 
   const [plan, setPlan] = useState(() => amendmentPlan(data));
   const [responsible, setResponsible] = useState(() => responsibility(data));
   const [baseVersion, setBaseVersion] = useState(data.version);
-  const [phone, setPhone] = useState(data.externalDriverPhone ?? '');
   const [reason, setReason] = useState('');
   const [attest, setAttest] = useState({ notDeparted: false, notLoaded: false });
   const [review, setReview] = useState<{ key: string; input: RouteAmendReviewInput; result: RouteAmendReview } | null>(null);
@@ -44,8 +50,7 @@ export function RouteAmendment({ data, catalogs, revision, disabled, command }: 
   const [resetCount, setResetCount] = useState(0);
   const busy = useRef(false);
   const input = routeAmendReviewInputSchema.safeParse({ version: baseVersion, reason, confirmNotDeparted: attest.notDeparted, confirmNotLoaded: attest.notLoaded, plan,
-    responsibleParticipants: data.stops.map((stop) => ({ appointmentId: stop.appointmentId, participantId: responsible[stop.appointmentId] ?? '' })),
-    ...(plan.planning?.driver.kind === 'external' ? { externalDriverPhone: phone } : {}) });
+    responsibleParticipants: data.stops.map((stop) => ({ appointmentId: stop.appointmentId, participantId: responsible[stop.appointmentId] ?? '' })) });
   const key = JSON.stringify([input.success ? input.data : null, revision, data.version]);
   const currentKey = useRef(key);
   useEffect(() => { currentKey.current = key; }, [key]);
@@ -55,7 +60,7 @@ export function RouteAmendment({ data, catalogs, revision, disabled, command }: 
   const responsibleValid = data.stops.every((stop) => actualPeople.some((person) => person.id === responsible[stop.appointmentId]));
 
   function reset() {
-    setPlan(amendmentPlan(data)); setResponsible(responsibility(data)); setBaseVersion(data.version); setPhone(data.externalDriverPhone ?? '');
+    setPlan(amendmentPlan(data)); setResponsible(responsibility(data)); setBaseVersion(data.version);
     setAttest({ notDeparted: false, notLoaded: false }); setReview(null); setAcknowledgedKey(null); setFailure(null); setResetCount((value) => value + 1);
   }
   function move(index: number, offset: -1 | 1) {
@@ -85,25 +90,26 @@ export function RouteAmendment({ data, catalogs, revision, disabled, command }: 
     } catch (error: unknown) { if (error instanceof ApiError && error.status === 409) setAcknowledgedKey(null); setFailure(error); toast.error(errorMessage(error, locale)); }
     finally { busy.current = false; setPending(false); }
   }
-  const preview = review ? { timeline: review.result.review.timeline, feasibility: review.result.review.feasibility, jobs: [], warnings: [], pointContexts: [] } : undefined;
-  const pointName = (id: string) => catalogs.points.find((point) => point.id === id)?.name ?? data.stops.find((stop) => stop.deliveryId === id)?.pickingName ?? id;
+  const preview = review ? { timeline: review.result.review.timeline, feasibility: review.result.review.feasibility, calendar: review.result.review.calendar, locations: review.result.review.locations, jobs: [], warnings: [], pointContexts: [] } : undefined;
+  const pointName = (id: string) => catalogs.points.find((point) => point.id === id)?.name ?? [data.review.locations?.start, data.review.locations?.end].find((point) => point?.id === id)?.name ?? data.stops.find((stop) => stop.deliveryId === id)?.pickingName ?? id;
 
   return <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="min-w-0 rounded-lg border p-4">
     <summary className="cursor-pointer font-semibold">{t('amend')}</summary><p className="my-3 text-sm text-muted-foreground">{t('amendHelp')}</p>
     {changed ? <Notice>{common('newerRecord')} <Button type="button" variant="outline" disabled={pending} onClick={reset}>{common('latestData')}</Button></Notice> : null}
     <fieldset key={resetCount} disabled={disabled || pending || changed} className="grid min-w-0 gap-4">
       <div className="grid gap-3 sm:grid-cols-2"><DateTimeInput name="amendedDeparture" label={pub('departure')} initialInstant={plan.departAt} onInstantChange={(departAt) => setPlan((value) => ({ ...value, departAt }))} />
-        <Field label={routes('vehicle')}><select value={plan.vehicleId ?? ''} onChange={(event) => setPlan((value) => ({ ...value, vehicleId: event.target.value || null }))}><option value="">{routes('unassigned')}</option>{catalogs.vehicles.filter((vehicle) => vehicle.enabled || vehicle.id === plan.vehicleId).map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>)}</select></Field>
-        <Field label={routes('crew')}><select value={plan.crewId ?? ''} onChange={(event) => setPlan((value) => ({ ...value, crewId: event.target.value || null }))}><option value="">{routes('unassigned')}</option>{catalogs.crews.filter((crew) => crew.enabled || crew.id === plan.crewId).map((crew) => <option key={crew.id} value={crew.id}>{crew.name}</option>)}</select></Field>
+        <Field label={routes('vehicle')}><Combobox value={plan.vehicleId ?? ''} onChange={(event) => setPlan((value) => ({ ...value, vehicleId: event.target.value || null }))}><option value="">{routes('unassigned')}</option>{catalogs.vehicles.filter((vehicle) => vehicle.enabled || vehicle.id === plan.vehicleId).map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>)}</Combobox></Field>
+        <Field label={routes('crew')}><Combobox value={plan.crewId ?? ''} onChange={(event) => setPlan((value) => ({ ...value, crewId: event.target.value || null }))}><option value="">{routes('unassigned')}</option>{catalogs.crews.filter((crew) => crew.enabled || crew.id === plan.crewId).map((crew) => <option key={crew.id} value={crew.id}>{crew.name}</option>)}</Combobox></Field>
+        <Field label={routes('start')}><Combobox required value={plan.startPointId} onChange={(event) => setPlan((value) => ({ ...value, startPointId: event.target.value }))}>{!catalogs.points.some((point) => point.id === plan.startPointId) ? <option disabled value={plan.startPointId}>{pointName(plan.startPointId)} · {routes('unavailable')}</option> : null}{catalogs.points.map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</Combobox></Field>
+        <Field label={routes('returnWarehouse')}><Combobox required value={plan.endPointId} onChange={(event) => setPlan((value) => ({ ...value, endPointId: event.target.value }))}>{!catalogs.points.some((point) => point.id === plan.endPointId) ? <option disabled value={plan.endPointId}>{pointName(plan.endPointId)} · {routes('unavailable')}</option> : null}{catalogs.points.map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</Combobox></Field>
       </div>
       <RouteResourceFields value={plan.planning ?? emptyRoutePlanning} onChange={(planning) => setPlan((value) => ({ ...value, planning }))} participants={catalogs.participants} crew={catalogs.crews.find((crew) => crew.id === plan.crewId)} />
-      {plan.planning?.driver.kind === 'external' ? <Field label={pub('phone')}><Input type="tel" maxLength={200} value={phone} onChange={(event) => setPhone(event.target.value)} /></Field> : null}
       <ol className="grid gap-3">{plan.stops.map((stop, index) => {
         const live = data.stops.find((entry) => entry.deliveryId === stop.deliveryId);
         if (!live) return null;
         return <li key={stop.deliveryId} className="grid min-w-0 gap-3 rounded-lg border p-3"><div className="flex flex-wrap items-center justify-between gap-2"><strong>{index + 1}. {live.pickingName}</strong><div className="flex gap-2"><Button type="button" variant="outline" size="sm" disabled={index === 0} onClick={() => move(index, -1)}>{routes('moveUp')}</Button><Button type="button" variant="outline" size="sm" disabled={index === plan.stops.length - 1} onClick={() => move(index, 1)}>{routes('moveDown')}</Button></div></div>
           <div className="grid gap-3 sm:grid-cols-2"><Field label={routes('duration')}><Input type="number" min={1} max={1440} step={1} value={stop.workMinutes ?? ''} onChange={(event) => setPlan((value) => ({ ...value, stops: value.stops.map((entry) => entry.deliveryId === stop.deliveryId ? { ...entry, workMinutes: event.target.value === '' ? null : Number(event.target.value), workDurationSource: 'manual' } : entry) }))} /></Field>
-            <Field label={t('responsible')}><select value={responsible[live.appointmentId] ?? ''} onChange={(event) => setResponsible((value) => ({ ...value, [live.appointmentId]: event.target.value }))}><option value="">{t('noResponsible')}</option>{responsible[live.appointmentId] && !actualPeople.some((person) => person.id === responsible[live.appointmentId]) ? <option value={responsible[live.appointmentId]} disabled>{pub('personMissing')}</option> : null}{actualPeople.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></Field></div>
+            <Field label={t('responsible')}><Combobox value={responsible[live.appointmentId] ?? ''} onChange={(event) => setResponsible((value) => ({ ...value, [live.appointmentId]: event.target.value }))}><option value="">{t('noResponsible')}</option>{responsible[live.appointmentId] && !actualPeople.some((person) => person.id === responsible[live.appointmentId]) ? <option value={responsible[live.appointmentId]} disabled>{pub('personMissing')}</option> : null}{actualPeople.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</Combobox></Field></div>
           <RouteWindowFields value={stop.customerWindow} onChange={(customerWindow) => setPlan((value) => ({ ...value, stops: value.stops.map((entry) => entry.deliveryId === stop.deliveryId ? { ...entry, customerWindow } : entry) }))} />
         </li>;
       })}</ol>
