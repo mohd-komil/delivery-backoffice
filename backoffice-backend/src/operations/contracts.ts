@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppointmentSchema, AssignmentSchema, DocumentSnapshotSchema, IdSchema, InstantSchema, InstructionsSchema, PersonSnapshotSchema, PriorWorkRevisionSchema, RequiredWorkInputSchema, ServiceTypeSchema, SignatureRefusalReviewDecisionSchema, SkillIdsSchema, SkillNameSchema, SourceItemSchema, TaskTemplateSchema, TextSchema, VehicleNameSchema, VehicleOperationalStatusSchema, VehicleOwnershipSchema, VehiclePlateSchema, WorkLinesInputSchema, WorkTimeRatesSchema } from '../domain/model';
+import { AppointmentSchema, AssignmentSchema, DocumentSnapshotSchema, IdSchema, InstantSchema, InstructionsSchema, PersonSnapshotSchema, PriorWorkRevisionSchema, RequiredWorkInputSchema, ServiceTypeSchema, SignatureRefusalReviewDecisionSchema, SkillIdsSchema, SkillNameSchema, SourceItemSchema, TaskTemplateSchema, TextSchema, VehicleNameSchema, VehicleOperationalStatusSchema, VehicleOwnershipSchema, VehiclePlateSchema, WorkLinesInputSchema, WorkTimeAdjustmentFieldsSchema, WorkTimeRatesSchema } from '../domain/model';
 export const VersionSchema = z.object({version:z.number().int().positive()});
 const SignatureRefusalReviewCommandFields = VersionSchema.extend({ requestId: IdSchema.toLowerCase() }).shape;
 export const SignatureRefusalReviewInput = z.discriminatedUnion('decision', [
@@ -12,6 +12,8 @@ export const ChangeServiceInput = z.union([
   VersionSchema.extend({ sourceLineId: SourceItemSchema.shape.sourceLineId, service: ServiceTypeSchema.nullable() }).strict(),
 ]);
 export const ChangeWorkTimesInput = WorkTimeRatesSchema.extend({ version: z.number().int().positive(), sourceLineId: SourceItemSchema.shape.sourceLineId }).strict();
+export const ChangeWorkTimeAdjustmentsInput = WorkTimeAdjustmentFieldsSchema.extend({ version: z.number().int().positive(),
+  requestId: IdSchema.toLowerCase(), reason: TextSchema }).strict();
 export const ChangeWorkQuantitiesInput = RequiredWorkInputSchema.extend(VersionSchema.shape).strict();
 export const ConfirmPriorWorkInput = PriorWorkRevisionSchema.pick({ sourceLineId: true, deliveredMilli: true, installedMilli: true,
   collectedMilli: true, sourceReference: true, reason: true, acknowledgeCurrentPicking: true })

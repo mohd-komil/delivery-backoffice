@@ -91,7 +91,9 @@ void test('remaining estimate uses corrected operation amounts and never trusts 
   assert.ok(original);
   completed.results.push({ ...original, id: randomUUID(), supersedesResultId: original.id, correctionReason: 'DEMO corrected quantity',
     quantities: [{ sourceLineId: 1, deliveredMilli: 500 }] });
-  assert.deepEqual(remainingWorkEstimate(target), { minutes: 68, basis: 'proportional_remaining_operations', sourceMinutes: 90 });
+  assert.deepEqual(remainingWorkEstimate(target), { minutes: 68, basis: 'proportional_remaining_operations', sourceMinutes: 90,
+    calculation: { algorithmVersion: 'remaining_work_v2', baseMinutes: 68, factorPercent: null, fixedMinutes: null,
+      adjustmentVersion: null, adjustmentStatus: 'not_configured' } });
   target.completedAt = '2031-01-02T08:00:00Z';
   assert.equal(remainingWorkEstimate(target).minutes, 68);
   const tiny = delivery(2, 1);
@@ -160,9 +162,13 @@ void test('list planning summaries and Routes/Nearby share remaining estimates t
       for (const [index, minutes, sourceMinutes] of [[1, 68, 90], [2, 75, 100], [3, 30, 60], [5, 60, 120]] as const) {
         const item = await row(index);
         assert.equal(item.planning.status, 'partially_completed');
-        assert.deepEqual(item.planning.remainingWorkEstimate, { minutes, basis: 'proportional_remaining_operations', sourceMinutes });
+        assert.deepEqual(item.planning.remainingWorkEstimate, { minutes, basis: 'proportional_remaining_operations', sourceMinutes,
+          calculation: { algorithmVersion: 'remaining_work_v2', baseMinutes: minutes, factorPercent: null, fixedMinutes: null,
+            adjustmentVersion: null, adjustmentStatus: 'not_configured' } });
       }
-      assert.deepEqual((await row(6)).planning.remainingWorkEstimate, { minutes: 0, basis: 'no_remaining_work', sourceMinutes: 60 });
+      assert.deepEqual((await row(6)).planning.remainingWorkEstimate, { minutes: 0, basis: 'no_remaining_work', sourceMinutes: 60,
+        calculation: { algorithmVersion: 'remaining_work_v2', baseMinutes: 0, factorPercent: null, fixedMinutes: 0,
+          adjustmentVersion: null, adjustmentStatus: 'not_configured' } });
       assert.equal((await row(6)).planning.status, 'awaiting_closure');
       for (const index of [4, 8, 9, 10]) assert.equal((await row(index)).planning.remainingWorkEstimate.basis, 'unknown');
     });
@@ -183,7 +189,9 @@ void test('list planning summaries and Routes/Nearby share remaining estimates t
       const catalogue = RouteJobsSchema.parse(await request('/routes/jobs'));
       for (const job of catalogue.jobs.filter((job) => job.pickingName !== 'PLANNING/001')) assert.deepEqual(job.remainingWorkEstimate, (await row(Number(job.pickingName.slice(-3)))).planning.remainingWorkEstimate);
       assert.deepEqual(catalogue.jobs.find((job) => job.pickingName === 'PLANNING/001')?.remainingWorkEstimate,
-        { minutes: 63, basis: 'proportional_remaining_operations', sourceMinutes: 90 });
+        { minutes: 63, basis: 'proportional_remaining_operations', sourceMinutes: 90,
+          calculation: { algorithmVersion: 'remaining_work_v2', baseMinutes: 63, factorPercent: null, fixedMinutes: null,
+            adjustmentVersion: null, adjustmentStatus: 'not_configured' } });
       const long = catalogue.jobs.find(({ pickingName }) => pickingName === 'PLANNING/007');
       assert.equal(long?.remainingWorkEstimate?.minutes, 3000);
       assert.equal(long?.suggestedWorkMinutes, null);
@@ -191,7 +199,9 @@ void test('list planning summaries and Routes/Nearby share remaining estimates t
       assert.ok(anchor);
       const near = RouteJobsSchema.parse(await request(`/routes/jobs?anchorId=${anchor.id}&radiusKm=10`));
       assert.equal(near.anchorJob?.suggestedWorkMinutes, 63);
-      assert.deepEqual(near.anchorJob?.remainingWorkEstimate, { minutes: 63, basis: 'proportional_remaining_operations', sourceMinutes: 90 });
+      assert.deepEqual(near.anchorJob?.remainingWorkEstimate, { minutes: 63, basis: 'proportional_remaining_operations', sourceMinutes: 90,
+        calculation: { algorithmVersion: 'remaining_work_v2', baseMinutes: 63, factorPercent: null, fixedMinutes: null,
+          adjustmentVersion: null, adjustmentStatus: 'not_configured' } });
       assert.equal((await row(1)).planning.remainingWorkEstimate.minutes, 68, 'Inbox includes the reserved remainder as well');
       assert.ok(near.jobs.some(({ pickingName }) => pickingName === 'PLANNING/002'));
     });

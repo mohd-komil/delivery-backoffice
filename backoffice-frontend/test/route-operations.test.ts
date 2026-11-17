@@ -3,7 +3,7 @@ import test from 'node:test';
 import { act, createElement } from 'react';
 import { cargoQuantityMilli, routeAmendInputSchema, routeAmendReviewInputSchema, routeCancelInputSchema, routeCloseInputSchema, routeReconcileInputSchema, routeReturnInputSchema, routeWarehouseReceiptInputSchema, validateRouteCommand } from '../src/lib/route-operations';
 import { ApiFixture, button, click, domHarness, editInput, hasToast, user, waitFor } from './refresh-fixtures';
-import { appointmentIds, catalogs, operationsFixture, routeId } from './route-operations-fixtures';
+import { appointmentIds, catalogs, deliveryIds, operationsFixture, routeId } from './route-operations-fixtures';
 
 const endpoint = `/routes/${routeId}`;
 function form(scope: ParentNode, submitLabel: string) { const found = button(scope, submitLabel).closest('form'); assert.ok(found); return found; }
@@ -215,5 +215,100 @@ void test('an unstarted stop can be explicitly skipped after actual return and p
     const skip = form(page.container, 'Skip this stop'); await editInput(input(skip, '[name=reason]'), 'No visit attempted before vehicle returned'); await click(button(skip, 'Skip this stop'));
     await waitFor(() => page.container.textContent?.includes('Current revision 2') === true, 'skip saved');
     assert.match(page.container.textContent ?? '', /Skipped/); assert.equal(api.calls.some((entry) => entry.pathname.endsWith('/close')), false);
+  } finally { await page.close(); }
+});
+
+void test('Plan vs actual loads on demand and keeps skipped and unrecorded data distinct through refresh', async () => {
+  const api = new ApiFixture();
+  const data = operationsFixture('in_progress');
+  data.version = 3;
+  api.defer(`${endpoint}/operations`).reply(data);
+  const [appointmentId] = appointmentIds;
+  const [deliveryId] = deliveryIds;
+  assert.ok(appointmentId && deliveryId);
+  const plannedAt = '2026-11-16T08:00:00.000Z';
+  const recordedAt = '2026-11-16T08:12:00.000Z';
+  const unknown = { planned: null, actual: null, deltaMinutes: null };
+  const plannedOnly = { planned: 30, actual: null, deltaMinutes: null };
+  const timing = {
+    id: routeId,
+    status: 'in_progress',
+    plan: { version: 2, at: plannedAt },
+    route: {
+      departAt: { planned: plannedAt, actual: recordedAt, deltaMinutes: 12 },
+      returnDepartAt: unknown, returnAt: unknown,
+      travelMinutes: plannedOnly, waitingMinutes: unknown, workMinutes: plannedOnly,
+      totalMinutes: plannedOnly, returnTravelMinutes: unknown,
+    },
+    stops: [{
+      deliveryId, appointmentId, sequence: 1, pickingName: 'DEMO/OUT/TIMING', status: 'cancelled',
+      arrivalAt: { planned: plannedAt, actual: null, deltaMinutes: null }, workStartAt: unknown, workEndAt: unknown,
+      travelMinutes: plannedOnly, waitingMinutes: unknown, workMinutes: plannedOnly,
+      reason: { kind: 'skipped', note: 'Road closed by police' },
+    }],
+  };
+  const initial = api.defer(`${endpoint}/timing`);
+  const page = await domHarness(api);
+  try {
+    const { RouteOperationsPanel } = await import('../src/components/route-operations');
+    await page.render(createElement(RouteOperationsPanel, { routeId, revision: 0, catalogs }));
+    await waitFor(() => page.container.textContent?.includes('Current revision 3') === true, 'current route');
+    assert.equal(initial.called, false);
+    await click(button(page.container, 'Plan vs actual'));
+    assert.equal(initial.called, true);
+    assert.match(page.container.textContent ?? '', /Loading time comparison/);
+    initial.reply(timing);
+    const comparison = page.container.querySelector('[aria-label="Plan vs actual"]');
+    assert.ok(comparison);
+    await waitFor(() => comparison.textContent?.includes('+12 min') === true, 'departure delay');
+    assert.match(comparison.textContent ?? '', /Published plan · revision 2/);
+    assert.ok(comparison.querySelector(`time[datetime="${recordedAt}"]`));
+    const stop = comparison.querySelector('details');
+    assert.ok(stop);
+    const summary = stop.querySelector('summary');
+    assert.ok(summary instanceof HTMLElement);
+    await act(async () => summary.click());
+    assert.match(summary.textContent ?? '', /DEMO\/OUT\/TIMING · Skipped/);
+    assert.match(stop.textContent ?? '', /Road closed by police/);
+    const arrival = Array.from(stop.querySelectorAll('tr')).find((row) => row.querySelector('th[scope=row]')?.textContent === 'Arrival');
+    assert.ok(arrival);
+    assert.deepEqual(Array.from(arrival.querySelectorAll('td'), (cell) => cell.querySelector('time')?.dateTime ?? cell.textContent), [plannedAt, '—No value', '—No value']);
+
+    api.defer(`${endpoint}/operations`).reply(data);
+    const refreshed = api.defer(`${endpoint}/timing`);
+    await click(button(page.container, 'Refresh route'));
+    refreshed.reply({ ...timing, route: { ...timing.route, totalMinutes: { planned: 75, actual: 65, deltaMinutes: -10 } } });
+    await waitFor(() => comparison.textContent?.includes('-10 min') === true, 'refreshed route duration');
+    assert.equal(button(page.container, 'Plan vs actual').getAttribute('aria-pressed'), 'true');
+    assert.equal(stop.open, true);
+
+    api.defer(`${endpoint}/operations`).reply(data);
+    api.defer(`${endpoint}/timing`).reply({ message: 'Timing service temporarily unavailable' }, 503);
+    await click(button(page.container, 'Refresh route'));
+    await waitFor(() => comparison.textContent?.includes('last loaded comparison') === true, 'transient refresh failure');
+    assert.match(comparison.textContent ?? '', /-10 min/);
+    assert.equal(comparison.querySelector('details'), stop, 'transient refresh preserves the same expanded stop');
+    assert.equal(stop.open, true);
+
+    api.defer(`${endpoint}/operations`).reply(data);
+    api.defer(`${endpoint}/timing`).reply(timing);
+    await click(button(page.container, 'Refresh route'));
+    await waitFor(() => comparison.getAttribute('aria-busy') === 'false' && comparison.querySelector('[role=alert]') === null, 'refresh recovered');
+    assert.equal(comparison.querySelector('details'), stop);
+    assert.equal(stop.open, true);
+
+    api.defer(`${endpoint}/operations`).reply(data);
+    api.defer(`${endpoint}/timing`).reply({ message: 'Operator access required' }, 403);
+    await click(button(page.container, 'Refresh route'));
+    await waitFor(() => comparison.querySelector('[role=alert]') !== null, 'permission error');
+    assert.match(comparison.textContent ?? '', /Operator access required/);
+    assert.equal(comparison.querySelector('table'), null, 'a rejected refresh clears the previous report');
+
+    api.defer(`${endpoint}/operations`).reply(data);
+    api.defer(`${endpoint}/timing`).reply({ ...timing, id: deliveryId });
+    await click(button(page.container, 'Refresh route'));
+    await waitFor(() => comparison.textContent?.includes('unexpected response') === true, 'mismatched route rejected');
+    assert.equal(comparison.querySelector('table'), null, 'another route payload must never render');
+    assert.ok(api.calls.every((call) => call.method === 'GET'));
   } finally { await page.close(); }
 });

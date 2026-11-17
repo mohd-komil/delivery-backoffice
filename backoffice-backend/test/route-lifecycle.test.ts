@@ -5,9 +5,11 @@ import { z } from 'zod';
 import { rows } from '../src/database/database';
 import { CrewVisitDetailSchema } from '../src/crew/contracts';
 import { RouteAmendReviewSchema, RouteOperationsSchema, RouteRevisionSchema, type RouteReconcileInputSchema } from '../src/routing/lifecycle-contracts';
+import { RouteTimingSchema } from '../src/routing/timing-contracts';
 import { lifecycleFixture, type LifecycleFixture, type LifecycleRoute } from './support/route-lifecycle-fixture';
 
 async function live(h: LifecycleFixture, id: string) { return RouteOperationsSchema.parse(await h.ok(`/routes/${id}/operations`)); }
+async function timing(h: LifecycleFixture, id: string) { return RouteTimingSchema.parse(await h.ok(`/routes/${id}/timing`)); }
 function command(version: number, reason = 'DEMO dispatcher decision') { return { version, requestId: randomUUID(), reason }; }
 function cancellation(version: number) { return { ...command(version), confirmNotLoaded: true, confirmNotDeparted: true, cancelAttachedAppointmentIds: [] }; }
 async function depart(h: LifecycleFixture, route: LifecycleRoute, cookie: string) {
@@ -33,6 +35,14 @@ void test('stage 07: real Crew route access and explicit departure', async (cont
       const first = route.stops[0]; const second = route.stops[1]; assert.ok(first && second);
       const initial = RouteRevisionSchema.parse(await h.ok(`/routes/${route.id}/revisions/1`));
       assert.equal(initial.version, 1); assert.equal(initial.status, 'published');
+      assert.equal((await h.request(`/routes/${route.id}/timing`, { cookie: '' })).status, 401);
+      assert.equal((await h.request(`/routes/${route.id}/timing`, { cookie: f.cookie })).status, 401);
+      assert.equal((await h.request(`/routes/${randomUUID()}/timing`)).status, 404);
+      const publishedTiming = await timing(h, route.id);
+      assert.deepEqual(publishedTiming.plan, { version: 1, at: initial.data.publishedAt });
+      assert.equal(publishedTiming.route.departAt.planned, initial.data.review.timeline.departAt);
+      assert.equal(publishedTiming.route.departAt.actual, null);
+      assert.equal(publishedTiming.route.workMinutes.actual, null);
       assert.equal((await h.request('/crew/routes', { cookie: '' })).status, 401);
       assert.equal((await h.request(`/crew/routes/${route.id}`, { cookie: h.operatorCookie })).status, 401);
       const outsider = await h.person('Unassigned tester'); const outsiderCookie = await h.login(outsider.login ?? '');
@@ -60,6 +70,15 @@ void test('stage 07: real Crew route access and explicit departure', async (cont
       const failed = CrewVisitDetailSchema.parse(await h.ok(`/crew/visits/${first.appointmentId}/attempt-failure`, { method: 'POST', cookie: f.cookie,
         body: { version: started.version, requestId: randomUUID(), reason: 'DEMO customer absent; no furniture transferred' } }));
       assert.equal(failed.status, 'failed');
+      const failedTiming = await timing(h, route.id);
+      const failedStop = failedTiming.stops.find(({ appointmentId }) => appointmentId === first.appointmentId); assert.ok(failedStop);
+      assert.deepEqual(failedStop.reason, { kind: 'customer_absent', note: 'DEMO customer absent; no furniture transferred' });
+      assert.ok(failedStop.workStartAt.actual);
+      assert.equal(failedStop.workEndAt.actual, null);
+      assert.equal(failedStop.workMinutes.actual, null);
+      assert.equal(failedStop.arrivalAt.actual, null);
+      assert.equal(failedTiming.route.travelMinutes.actual, null);
+      assert.equal(failedTiming.route.waitingMinutes.actual, null);
       state = await live(h, route.id); assert.equal(state.nextAppointmentId, second.appointmentId); assert.equal(state.status, 'in_progress');
       assert.equal(state.capabilities.canReturn, false);
       await h.confirm(second.deliveryId, second.appointmentId);
@@ -138,6 +157,10 @@ void test('stage 08: atomic route amendments, cancellation and retained history'
       assert.ok(crewRoutes.routes.every(({ id }) => id !== route.id));
       const standalone = CrewVisitDetailSchema.parse(await h.ok(`/crew/visits/${attached.appointmentId}`, { cookie: f.cookie }));
       assert.equal(standalone.canStart, true);
+      await h.start(attached.appointmentId, f.cookie);
+      const cancelledTiming = await timing(h, route.id);
+      assert.ok(cancelledTiming.stops.every((stop) => stop.status === 'cancelled' && stop.workStartAt.actual === null && stop.workEndAt.actual === null));
+      assert.ok(cancelledTiming.stops.every((stop) => stop.reason?.kind === 'cancelled' && stop.reason.note === body.reason));
     });
 
     await context.test('attached cancellation requires explicit selection and rollback prevents a partial cancellation', async () => {
@@ -157,11 +180,13 @@ void test('stage 08: atomic route amendments, cancellation and retained history'
       const f = await h.fixture(); const route = await h.publish(f, true);
       for (const stop of route.stops) await h.confirm(stop.deliveryId, stop.appointmentId);
       const original = await live(h, route.id);
+      const originalTiming = await timing(h, route.id);
       const changed = { version: original.version, reason: 'DEMO afternoon route in reverse order', confirmNotLoaded: true, confirmNotDeparted: true,
         plan: { ...original.draft, departAt: new Date(Date.parse(original.draft.departAt) + 3 * 60 * 60_000).toISOString(), stops: [...original.draft.stops].reverse() },
         responsibleParticipants: original.stops.map(({ appointmentId }) => ({ appointmentId, participantId: f.participant.id })) };
       const review = RouteAmendReviewSchema.parse(await h.ok(`/routes/${route.id}/amend-review`, { method: 'POST', body: changed }));
       assert.equal(review.review.feasibility.status, 'feasible_estimate');
+      assert.deepEqual(await timing(h, route.id), originalTiming, 'Reviewing a proposed amendment must preserve the published timing baseline');
       assert.deepEqual(new Set(review.confirmationResetAppointmentIds), new Set(route.stops.map(({ appointmentId }) => appointmentId)));
       const before = await dataSnapshot(h);
       assert.equal((await h.request(`/routes/${route.id}/amend`, { method: 'POST', body: { ...changed, requestId: randomUUID(), fingerprint: '0'.repeat(64), acknowledgeEstimates: true } })).status, 409);
@@ -178,6 +203,11 @@ void test('stage 08: atomic route amendments, cancellation and retained history'
       const revision = RouteRevisionSchema.parse(await h.ok(`/routes/${route.id}/revisions/1`));
       assert.equal(revision.data.draft.departAt, original.draft.departAt);
       assert.deepEqual(revision.data.review.stops.map(({ appointmentId }) => appointmentId), original.stops.map(({ appointmentId }) => appointmentId));
+      const amendedTiming = await timing(h, route.id);
+      assert.equal(amendedTiming.plan.version, amended.version);
+      assert.equal(amendedTiming.route.departAt.planned, review.review.timeline.departAt);
+      assert.deepEqual(amendedTiming.stops.map(({ appointmentId }) => appointmentId), amended.stops.map(({ appointmentId }) => appointmentId));
+      assert.deepEqual(amendedTiming.stops.map(({ workStartAt }) => workStartAt.planned), review.review.timeline.stops.map(({ workStartAt }) => workStartAt));
       const after = await dataSnapshot(h); await h.ok(`/routes/${route.id}/amend`, { method: 'POST', body }); assert.deepEqual(await dataSnapshot(h), after);
     });
 
@@ -262,6 +292,7 @@ void test('stage 09: actual return, separate cargo receipt and remaining-work re
   try {
     await context.test('partial delivery preserves exact facts; return and route closure do not close the picking or installation remainder', async () => {
       const f = await h.fixture({ count: 1, service: 'delivery_installation' }); const route = await h.publish(f); const stop = route.stops[0]; assert.ok(stop);
+      const baseline = await timing(h, route.id);
       await depart(h, route, f.cookie); await h.start(stop.appointmentId, f.cookie);
       await h.finish(stop.appointmentId, f.cookie,
         [{ sourceLineId: 31, deliveredMilli: 1000, installedMilli: 0 }, { sourceLineId: 32, deliveredMilli: 500, installedMilli: 0 }],
@@ -283,6 +314,20 @@ void test('stage 09: actual return, separate cargo receipt and remaining-work re
       assert.equal(state.status, 'returned'); assert.equal(state.runtime.warehouseReceipts.length, 0);
       const afterReturn = await dataSnapshot(h);
       await h.ok(`/crew/routes/${route.id}/return`, { method: 'POST', cookie: f.cookie, body: returnedBody }); assert.deepEqual(await dataSnapshot(h), afterReturn);
+      const returnedTiming = await timing(h, route.id);
+      assert.deepEqual(await dataSnapshot(h), afterReturn, 'Timing reads must preserve all route, delivery and audit history');
+      assert.deepEqual(returnedTiming.plan, baseline.plan);
+      assert.equal(returnedTiming.route.departAt.planned, baseline.route.departAt.planned);
+      assert.equal(returnedTiming.route.departAt.actual, state.runtime.departed?.at);
+      assert.equal(returnedTiming.route.returnAt.actual, returnedBody.actualReturnedAt);
+      assert.equal(returnedTiming.route.returnDepartAt.actual, state.runtime.returning?.at);
+      assert.equal(returnedTiming.stops[0]?.workStartAt.actual, report.actualStart);
+      assert.equal(returnedTiming.stops[0]?.workEndAt.actual, report.actualEnd);
+      assert.equal(returnedTiming.route.workMinutes.actual, (Date.parse(report.actualEnd) - Date.parse(report.actualStart)) / 60_000);
+      assert.equal(returnedTiming.route.totalMinutes.actual, (Date.parse(returnedBody.actualReturnedAt) - Date.parse(state.runtime.departed?.at ?? '')) / 60_000);
+      assert.equal(returnedTiming.route.returnTravelMinutes.actual, (Date.parse(returnedBody.actualReturnedAt) - Date.parse(state.runtime.returning?.at ?? '')) / 60_000);
+      assert.equal(returnedTiming.stops[0]?.travelMinutes.actual, null);
+      assert.equal(returnedTiming.stops[0]?.waitingMinutes.actual, null);
       assert.equal((await h.request(`/routes/${route.id}/close`, { method: 'POST', body: command(state.version) })).status, 409);
       const reconcileBody = await reconciliation(h, route.id);
       const missingOwner = { ...reconcileBody, lines: reconcileBody.lines.map((line) => ({ ...line, ownerUserId: randomUUID() })) };
@@ -291,6 +336,9 @@ void test('stage 09: actual return, separate cargo receipt and remaining-work re
       const closeBody = command(state.version, 'DEMO reviewed route, picking still has remaining work');
       state = RouteOperationsSchema.parse(await h.ok(`/routes/${route.id}/close`, { method: 'POST', body: closeBody }));
       assert.equal(state.status, 'closed');
+      const closedTiming = await timing(h, route.id);
+      assert.deepEqual(closedTiming.plan, baseline.plan);
+      assert.deepEqual(closedTiming.route, returnedTiming.route);
       const final = await h.detail(stop.deliveryId);
       assert.equal(final.delivery.completedAt, null);
       assert.deepEqual(final.delivery.appointments.find(({ id }) => id === stop.appointmentId)?.results[0], report);
@@ -399,6 +447,12 @@ void test('stage 09: actual return, separate cargo receipt and remaining-work re
       assert.equal((await h.request(`/routes/${route.id}/stops/${first.appointmentId}/skip`, { method: 'POST', body: command(state.version) })).status, 409);
       const skipped = RouteOperationsSchema.parse(await h.ok(`/routes/${route.id}/stops/${second.appointmentId}/skip`, { method: 'POST', body: command(state.version, 'DEMO customer rescheduled before visit') }));
       assert.equal(skipped.stops.find(({ appointmentId }) => appointmentId === second.appointmentId)?.skipped, true);
+      const skippedTiming = await timing(h, route.id);
+      const skippedStop = skippedTiming.stops.find(({ appointmentId }) => appointmentId === second.appointmentId); assert.ok(skippedStop);
+      assert.deepEqual(skippedStop.reason, { kind: 'skipped', note: 'DEMO customer rescheduled before visit' });
+      assert.equal(skippedStop.workStartAt.actual, null);
+      assert.equal(skippedStop.workEndAt.actual, null);
+      assert.equal(skippedTiming.route.workMinutes.actual, null, 'A completed visit must not conceal a missing duration for another planned stop');
       assert.equal((await h.detail(second.deliveryId)).lineServices[0]?.availableDeliveryMilli, 2000);
       const resources = await rows(h.database.source.manager, z.object({ resource: z.string() }), 'SELECT resource FROM route_reservation WHERE route_id=$1', [route.id]);
       assert.equal(resources.length, 4, 'Crew, two people and vehicle remain reserved through return');
@@ -412,6 +466,10 @@ void test('stage 09: actual return, separate cargo receipt and remaining-work re
         body: command(route.version, 'DEMO loaded vehicle did not leave the depot') }));
       state = RouteOperationsSchema.parse(await h.ok(`/routes/${route.id}/return`, { method: 'POST',
         body: { version: state.version, requestId: randomUUID(), actualReturnedAt: new Date().toISOString() } }));
+      const abortedTiming = await timing(h, route.id);
+      assert.equal(abortedTiming.route.returnDepartAt.actual, null, 'Abort transition alone does not record physical return-journey departure');
+      assert.equal(abortedTiming.route.returnTravelMinutes.actual, null);
+      assert.equal(abortedTiming.route.totalMinutes.actual, null, 'Route had no confirmed departure');
       assert.equal((await h.request(`/routes/${route.id}/close`, { method: 'POST',
         body: { ...command(state.version), exceptionReason: 'DEMO cannot hide the reserved unstarted work' } })).status, 409);
       assert.equal((await h.detail(stop.deliveryId)).lineServices[0]?.reservedDeliveryMilli, 1000);

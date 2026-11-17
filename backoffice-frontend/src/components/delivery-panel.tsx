@@ -39,6 +39,7 @@ import { DeliveryWorkReadiness, ResultIssueLinks } from './delivery-work-readine
 import { DeliveryFiles, DeliveryResultDocuments } from './delivery-files';
 import { TimeStandardHistory } from './delivery-time-standard';
 import { WorkQuantitiesHistory } from './delivery-work-quantities';
+import { DeliveryWorkEstimate, WorkTimeAdjustmentsHistory } from './delivery-work-estimate';
 import { SignatureRefusalReview } from './delivery-signature-refusal';
 
 export function DeliveryPanel({ id, user, onClose, onChanged, onOpenRouteDraft, refreshKey = 0, initialTab = 'overview', initialFocus }: { id: string; user: User; onClose: () => void; onChanged: () => void; onOpenRouteDraft?: (id: string) => void; refreshKey?: number; initialTab?: DeliveryTab; initialFocus?: DeliveryFocus }) {
@@ -176,6 +177,7 @@ function Overview({ detail, command, refresh, locationRevision }: { detail: Deli
       <div className="mt-3"><EntranceReviewAction deliveryId={delivery.id} onSaved={refresh} onLocated={refresh} /></div></DeliveryDetailCard>
     <DeliveryProductLines detail={detail} saveService={(update) => command('/services', update, 'PATCH')} saveWorkTimes={(update) => command('/work-times', update, 'PATCH')} savePriorWork={(update) => command('/prior-work', update, 'PATCH')} applyTimeStandard={(update) => command('/work-times/standard', update)}
       saveWorkQuantities={(update) => command('/work-quantities', update, 'PATCH')} />
+    {detail.remainingWorkEstimate ? <DeliveryWorkEstimate delivery={delivery} estimate={detail.remainingWorkEstimate} save={(update) => command('/work-time-adjustments', update, 'PATCH')} /> : null}
     <DeliveryDetailCard title={t('accessInstructions')} icon="instructions" badge={t('backofficeOwned')}><ActionForm dataVersion={delivery.version} submitLabel={t('saveInstructions')} onSubmit={async (data) => {
       const floorText = textField(data, 'floor');
       const floor = floorText === '' ? null : z.coerce.number().int().min(-10).max(200).parse(floorText);
@@ -423,6 +425,7 @@ function History({ detail, command }: { detail: DeliveryDetail; command: Command
   const priorText = useTranslations('priorWork');
   const quantityText = useTranslations('workQuantities');
   const sourceText = useTranslations('sourceReview');
+  const adjustmentText = useTranslations('workTimeAdjustments');
   const locale = useLocale();
   const recordedVisits = detail.delivery.appointments.map((appointment, index) => ({ appointment, index })).filter(({ appointment }) => appointment.status === 'in_progress' || appointment.workScope || appointment.failedAttempt || appointment.customerConfirmation || appointment.results.length > 0 || (appointment.transportAllocations?.length ?? 0) > 0);
   return <>
@@ -434,9 +437,10 @@ function History({ detail, command }: { detail: DeliveryDetail; command: Command
           <WorkQuantitiesHistory details={event.details} /><details><summary>{t('eventDetails')}</summary><pre>{JSON.stringify(event.details, null, 2)}</pre></details></div>
       </li>;
       const title = sourceAction ? sourceText(sourceAction) : event.action === 'prior_work.confirmed' ? priorText('historyTitle')
+        : event.action === 'work_times.adjustments_updated' ? adjustmentText('historyTitle')
         : event.action === 'appointment.work_scope_updated' ? workText('auditScope')
         : event.action === 'execution.signature_refusal_reviewed' ? refusalText('audit') : deliveryAuditLabel(t, event.action);
-      return <li key={event.id}><span className="history-dot" /><div><h4>{title}</h4><p>{event.actorName} · {formatDateTime(event.at, locale)}</p>{sourceAction ? <SourceReviewHistory details={event.details} /> : event.action === 'prior_work.confirmed' ? <PriorWorkHistory details={event.details} /> : event.action === 'work_times.standard_applied' ? <TimeStandardHistory details={event.details} /> : null}<details><summary>{t('eventDetails')}</summary><pre>{JSON.stringify(event.details, null, 2)}</pre></details></div></li>;
+      return <li key={event.id}><span className="history-dot" /><div><h4>{title}</h4><p>{event.actorName} · {formatDateTime(event.at, locale)}</p>{sourceAction ? <SourceReviewHistory details={event.details} /> : event.action === 'prior_work.confirmed' ? <PriorWorkHistory details={event.details} /> : event.action === 'work_times.standard_applied' ? <TimeStandardHistory details={event.details} /> : event.action === 'work_times.adjustments_updated' ? <WorkTimeAdjustmentsHistory details={event.details} /> : null}<details><summary>{t('eventDetails')}</summary><pre>{JSON.stringify(event.details, null, 2)}</pre></details></div></li>;
     })}</ol>}
     </DeliveryDetailCard><DeliveryWorkReadiness delivery={detail.delivery} />
     {recordedVisits.length > 0 ? <DeliveryDetailCard title={t('recordedVisits')} icon="calendar" badge={recordedVisits.length}>

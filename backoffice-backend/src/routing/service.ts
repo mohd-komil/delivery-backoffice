@@ -6,6 +6,7 @@ import { rows } from '../database/database';
 import { destinationAddressKey } from '../domain/destination-address';
 import { IdSchema, InstantSchema, type Delivery, type OperatorActor } from '../domain/model';
 import { appointmentScopeReviewReason, customerConfirmationStatus, estimateWorkMinutes, lineServiceStatuses } from '../domain/rules';
+import { workTimeAdjustmentContext } from '../domain/work-time-adjustments';
 import { Participants } from '../operations/participants';
 import type { EffectiveDeliveryPoint } from '../operations/delivery-points';
 import { DeliveryStore } from '../operations/store';
@@ -102,7 +103,9 @@ export function routeJob(delivery: Delivery, entrance?: RoutePointCoordinates, a
     remainingWorkEstimate: estimate,
     remaining,
     workFingerprint: createHash('sha256').update(JSON.stringify({ source: delivery.source, addressKey, remaining, workReviewReason, appointmentId: appointmentId ?? null,
-      ...(workTimes?.length ? { workTimes } : {}) })).digest('hex'),
+      ...(workTimes?.length ? { workTimes } : {}),
+      ...(delivery.workTimeAdjustments ? { workTimeAdjustments: delivery.workTimeAdjustments,
+        workTimeAdjustmentContext: workTimeAdjustmentContext(delivery), calculationAlgorithm: estimate.calculation?.algorithmVersion } : {}) })).digest('hex'),
     workBasis: appointmentId ? 'appointment' : 'available_remaining', appointmentId: appointmentId ?? null,
     hasAvailableRemaining: availableWork.some(({ deliveryMilli, installationMilli, collectionMilli }) => deliveryMilli + installationMilli + collectionMilli > 0),
     workReviewReason, appointmentOptions,

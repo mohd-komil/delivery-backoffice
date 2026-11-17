@@ -1,13 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  CustomerConfirmationSchema, DeliverySchema, ExecutionInputSchema, FailedAttemptSchema, IdSchema, InstantSchema, IssueInputSchema, mappedSourceService, PriorWorkRevisionSchema, PriorWorkStatusSchema, RequiredWorkInputSchema, ReturnInputSchema, SignatureRefusalReviewDecisionSchema, SignatureRefusalReviewSchema, SignatureRefusalSchema, TextSchema, VisitWorkScopeSchema, WorkLinesInputSchema,
+  CustomerConfirmationSchema, DeliverySchema, ExecutionInputSchema, FailedAttemptSchema, IdSchema, InstantSchema, IssueInputSchema, mappedSourceService, PriorWorkRevisionSchema, PriorWorkStatusSchema, RequiredWorkInputSchema, ReturnInputSchema, SignatureRefusalReviewDecisionSchema, SignatureRefusalReviewSchema, SignatureRefusalSchema, TextSchema, VisitWorkScopeSchema, WorkLinesInputSchema, WorkTimeAdjustmentsSchema,
   type Appointment, type CrewActor, type CrewDrawingInput, type CustomerDrawingInput, type Delivery, type DeliveryView,
-  type ExecutionInput, type Issue, type IssueInput, type LineWorkTime, type OperatorActor, type RemainingWorkEstimate, type RequiredWorkInput, type ReturnInput, type ServiceType, type SignatureRefusalReviewDecision, type SkillSnapshot, type SourceItem, type Task, type TaskTemplate, type VisitResult, type WorkLineInput, type WorkTimeRates,
+  type ExecutionInput, type Issue, type IssueInput, type LineWorkTime, type OperatorActor, type RemainingWorkEstimate, type RequiredWorkInput, type ReturnInput, type ServiceType, type SignatureRefusalReviewDecision, type SkillSnapshot, type SourceItem, type Task, type TaskTemplate, type VisitResult, type WorkLineInput, type WorkTimeRates, type WorkTimeAdjustments,
 } from './model';
 import { sameSignatureDrawing } from './signature-strokes';
 import { destinationAddressKey, destinationAreaIdentity } from './destination-address';
 import { latestPriorWork, priorWorkMatches, validPriorWork, type PriorWorkScope } from './prior-work';
 import { sourcePlanningBlocked } from './source-import';
+import { applyWorkTimeAdjustments, workTimeAdjustmentContext } from './work-time-adjustments';
 
 /** Commands return a new aggregate. The caller persists it and its audit in one transaction. */
 export class DomainError extends Error {
@@ -272,7 +273,8 @@ export function lineServiceStatuses(delivery: LineWorkScope, excludeAppointmentI
 /** Whole-delivery work must not hide lines whose required operations are still unknown. */
 export function remainingWorkEstimate(delivery: Delivery): RemainingWorkEstimate {
   const lines = lineServiceStatuses(delivery);
-  if (lines.some(({ service }) => service === null)) return { minutes: null, basis: 'unknown', sourceMinutes: delivery.source.estimatedMinutes };
+  if (lines.some(({ service }) => service === null)) return applyWorkTimeAdjustments(delivery, [],
+    { minutes: null, basis: 'unknown', sourceMinutes: delivery.source.estimatedMinutes });
   return estimateWorkMinutes(delivery, lines.map((line) => ({ sourceLineId: line.sourceLineId,
     deliveryMilli: line.remainingDeliveryMilli, installationMilli: line.remainingInstallationMilli, collectionMilli: line.remainingCollectionMilli })));
 }
@@ -309,12 +311,14 @@ function sourceTimeBasis(delivery: Delivery, lines: ReturnType<typeof lineWork>)
 }
 
 function estimateSelectedWork(delivery: Delivery, work: readonly Pick<WorkLineInput, 'sourceLineId' | 'deliveryMilli' | 'installationMilli' | 'collectionMilli'>[],
-  lines: ReturnType<typeof lineWork>): RemainingWorkEstimate {
+  lines: ReturnType<typeof lineWork>, includeAdjustments = true): RemainingWorkEstimate {
+  const finish = (estimate: RemainingWorkEstimate, exact?: { numerator: bigint; denominator: bigint }) =>
+    includeAdjustments ? applyWorkTimeAdjustments(delivery, work, estimate, exact) : estimate;
   const sourceMinutes = delivery.source.estimatedMinutes;
-  if (delivery.sourceReview || lines.length === 0) return { minutes: null, basis: 'unknown', sourceMinutes };
+  if (delivery.sourceReview || lines.length === 0) return finish({ minutes: null, basis: 'unknown', sourceMinutes });
   const selected = work.filter((entry) => entry.deliveryMilli + entry.installationMilli + entry.collectionMilli > 0);
-  if (!selected.length) return lines.some(({ service }) => service === null)
-    ? { minutes: null, basis: 'unknown', sourceMinutes } : { minutes: 0, basis: 'no_remaining_work', sourceMinutes };
+  if (!selected.length) return finish(lines.some(({ service }) => service === null)
+    ? { minutes: null, basis: 'unknown', sourceMinutes } : { minutes: 0, basis: 'no_remaining_work', sourceMinutes });
   const source = sourceTimeBasis(delivery, lines);
   const byId = new Map(lines.map((line) => [line.item.sourceLineId, line]));
   const local = new Map(delivery.servicePlan?.timeEstimates?.map((entry) => [entry.sourceLineId, entry]));
@@ -337,14 +341,15 @@ function estimateSelectedWork(delivery: Delivery, work: readonly Pick<WorkLineIn
       else missing.add(entry.sourceLineId);
     }
   }
-  if (missing.size || stale.size) return { minutes: null, basis: 'unknown', sourceMinutes,
-    ...(missing.size ? { missingSourceLineIds: [...missing] } : {}), ...(stale.size ? { staleSourceLineIds: [...stale] } : {}) };
+  if (missing.size || stale.size) return finish({ minutes: null, basis: 'unknown', sourceMinutes,
+    ...(missing.size ? { missingSourceLineIds: [...missing] } : {}), ...(stale.size ? { staleSourceLineIds: [...stale] } : {}) });
   const sourceDenominator = BigInt(source.total || 1);
   const denominator = 1000n * sourceDenominator;
   const numerator = localNumerator * sourceDenominator + sourceNumerator * 1000n;
   const minutes = Number((numerator + denominator - 1n) / denominator);
-  if (minutes > 10080) return { minutes: null, basis: 'unknown', sourceMinutes, exceedsLimit: true };
-  return { minutes, basis: usedLocal ? usedSource ? 'mixed_operation_rates' : 'local_operation_rates' : 'proportional_remaining_operations', sourceMinutes };
+  if (minutes > 10080 && !includeAdjustments) return { minutes: null, basis: 'unknown', sourceMinutes, exceedsLimit: true };
+  return finish({ minutes, basis: usedLocal ? usedSource ? 'mixed_operation_rates' : 'local_operation_rates' : 'proportional_remaining_operations', sourceMinutes },
+    { numerator, denominator });
 }
 
 function workTimeEditable(delivery: Delivery, sourceLineId: number): boolean {
@@ -363,7 +368,7 @@ export function lineWorkTimes(delivery: Delivery) {
     const entry = local.get(status.sourceLineId);
     const stale = staleWorkTime(delivery, line.item, entry);
     const estimate = estimateSelectedWork(delivery, [{ sourceLineId: status.sourceLineId, deliveryMilli: status.remainingDeliveryMilli,
-      installationMilli: status.remainingInstallationMilli, collectionMilli: status.remainingCollectionMilli }], lines);
+      installationMilli: status.remainingInstallationMilli, collectionMilli: status.remainingCollectionMilli }], lines, false);
     const rates = entry ?? emptyRates;
     return { sourceLineId: status.sourceLineId, deliveryMinutesPerUnit: rates.deliveryMinutesPerUnit,
       installationMinutesPerUnit: rates.installationMinutesPerUnit, collectionMinutesPerUnit: rates.collectionMinutesPerUnit,
@@ -391,6 +396,19 @@ export function changeWorkTimes(delivery: Delivery, input: WorkTimeRates & { sou
   const entries = (plan.timeEstimates ?? []).filter(({ sourceLineId }) => sourceLineId !== input.sourceLineId);
   if (!clear) entries.push({ ...input, context: workTimeContext(delivery, line.item), updatedAt: at, updatedBy: { id: actor.id, name: actor.name } });
   return { ...delivery, servicePlan: { ...plan, timeEstimates: entries } };
+}
+
+export function changeWorkTimeAdjustments(delivery: Delivery,
+  input: Pick<WorkTimeAdjustments, 'factorPercent' | 'visitMinutes' | 'deliveryMinutes' | 'installationMinutes' | 'collectionMinutes'
+    | 'sourceEstimateExcludesAdjustments' | 'sourceReference' | 'assumptions'>, actor: OperatorActor, at: string): Delivery {
+  assertOpen(delivery);
+  if (delivery.sourceReview) throw new DomainError('SOURCE_REVIEW_REQUIRED', 'Review the source before changing work-time adjustments');
+  if (delivery.appointments.some(({ status }) => status === 'in_progress')) {
+    throw new DomainError('WORK_TIME_LOCKED', 'Work-time adjustments cannot change while a visit is in progress');
+  }
+  const workTimeAdjustments = WorkTimeAdjustmentsSchema.parse({ ...input, version: (delivery.workTimeAdjustments?.version ?? 0) + 1,
+    contextFingerprint: workTimeAdjustmentContext(delivery), updatedAt: at, updatedBy: { id: actor.id, name: actor.name } });
+  return { ...delivery, workTimeAdjustments };
 }
 
 export function changeServicePlan(delivery: Delivery, change: { defaultService: ServiceType } | { sourceLineId: number; service: ServiceType | null }) {

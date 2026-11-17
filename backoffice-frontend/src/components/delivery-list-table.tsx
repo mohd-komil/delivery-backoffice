@@ -119,7 +119,7 @@ function RemainingWork({ planning }: { planning: ListItem['planning'] }) {
     <span className="font-medium tabular-nums">{estimate?.minutes === null || estimate?.minutes === undefined
       ? t('unknownEstimate') : t(estimate.basis !== 'no_remaining_work' ? 'provisionalMinutes' : 'minutes', { count: estimate.minutes })}</span>
     {estimate?.basis === 'proportional_remaining_operations' ? <span className="cell-sub">{t('provisional')}</span> : null}
-    {estimate?.basis === 'local_operation_rates' || estimate?.basis === 'mixed_operation_rates' ? <WorkEstimateProvenance basis={estimate.basis} /> : null}
+    {estimate ? <WorkEstimateProvenance basis={estimate.basis} estimate={estimate} /> : null}
     {estimate?.exceedsLimit ? <span className="cell-sub text-warning-foreground">{timeText('exceedsLimit')}</span> : null}
     {estimate?.basis === 'no_remaining_work' ? <span className="cell-sub">{t('noRemaining')}</span> : null}
     {estimate?.sourceMinutes !== null && estimate?.sourceMinutes !== undefined ? <span className="cell-sub">{t('sourceMinutes', { count: estimate.sourceMinutes })}</span> : null}

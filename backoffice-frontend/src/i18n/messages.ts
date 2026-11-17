@@ -17,6 +17,7 @@ import * as workspace from './messages/workspace';
 import * as workPlan from './messages/work-plan';
 import * as workQuantities from './messages/work-quantities';
 import * as workTimes from './messages/work-times';
+import * as workTimeAdjustments from './messages/work-time-adjustments';
 import * as priorWork from './messages/prior-work';
 import * as sourceReview from './messages/source-review';
 import * as dispatcher from './messages/dispatcher';
@@ -47,6 +48,7 @@ export function messagesForLocale(locale: Locale) {
     workPlan: workPlan[locale],
     workQuantities: workQuantities[locale],
     workTimes: workTimes[locale],
+    workTimeAdjustments: workTimeAdjustments[locale],
     priorWork: priorWork[locale],
     sourceReview: sourceReview[locale],
     dispatcher: dispatcher[locale],

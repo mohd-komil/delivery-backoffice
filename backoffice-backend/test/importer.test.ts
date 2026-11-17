@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { applicationUrl, config } from '../src/config';
 import { applicationMigrations, Database, makeDataSource, rows } from '../src/database/database';
 import { createDelivery, WorkTimeStandardSnapshotSchema, type Appointment, type CrewActor, type OperatorActor, type TaskTemplate } from '../src/domain/model';
-import { changeServicePlan, changeWorkTimes, confirmCustomerVisit, confirmPriorWork, estimateWorkMinutes, instantiateTask, lineServiceStatuses, lineWorkTimes, planVisitWork, priorWorkStatus, recordExecution, startVisit } from '../src/domain/rules';
+import { changeServicePlan, changeWorkTimeAdjustments, changeWorkTimes, confirmCustomerVisit, confirmPriorWork, estimateWorkMinutes, instantiateTask, lineServiceStatuses, lineWorkTimes, planVisitWork, priorWorkStatus, recordExecution, startVisit } from '../src/domain/rules';
 import { Importer } from '../src/integration/importer';
 import { ImportGeocoding } from '../src/integration/import-geocoding';
 import { AddressGeocoding } from '../src/routing/geocoding';
@@ -300,6 +300,36 @@ void test('real PostgreSQL importer: isolated source, idempotency, related chang
           [timedPicking.source.serviceType, timedPicking.source.estimatedMinutes, 20]);
         await importer.run(actor);
         await acceptPending(timedPicking.id);
+      }
+    });
+
+    await context.test('reviewed visit allowances survive reimport and expose changed source destinations for review', async () => {
+      const before = await store.get(timedPicking.id);
+      const configured = await store.mutate(before.id, before.version, actor, 'test.configure_visit_allowances', (current) =>
+        changeWorkTimeAdjustments(current, { factorPercent: 100, visitMinutes: 5, deliveryMinutes: 0, installationMinutes: 0,
+          collectionMinutes: 0, sourceEstimateExcludesAdjustments: false, sourceReference: 'Isolated local observation',
+          assumptions: 'Base unit times exclude five fixed minutes per visit.' }, actor, '2026-11-17T10:00:00Z'));
+      const saved = structuredClone(configured.workTimeAdjustments);
+      const originalMinutes = estimateWorkMinutes(before, timedWork).minutes;
+      assert.equal(typeof originalMinutes, 'number');
+      assert.equal(estimateWorkMinutes(configured, timedWork).minutes, (originalMinutes ?? 0) + 5);
+      try {
+        assert.equal((await importer.run(actor)).status, 'succeeded');
+        assert.deepEqual((await store.get(before.id)).workTimeAdjustments, saved);
+        await sourceOwner.query('UPDATE res_partner SET street=$1 WHERE id=$2', ['Via Reviewed Site Changed 9', before.source.customer.id]);
+        assert.equal((await importer.run(actor)).status, 'succeeded');
+        await acceptPending(before.id);
+        const changed = await store.get(before.id);
+        assert.deepEqual(changed.workTimeAdjustments, saved, 'Source imports retain versioned local evidence');
+        assert.equal(estimateWorkMinutes(changed, timedWork).calculation?.adjustmentStatus, 'needs_review');
+        assert.equal(estimateWorkMinutes(changed, timedWork).minutes, null);
+      } finally {
+        await sourceOwner.query('UPDATE res_partner SET street=$1 WHERE id=$2', [before.source.customer.address, before.source.customer.id]);
+        await importer.run(actor);
+        await acceptPending(before.id);
+        const restored = await store.get(before.id);
+        delete restored.workTimeAdjustments;
+        await store.save(database.source.manager, restored);
       }
     });
 

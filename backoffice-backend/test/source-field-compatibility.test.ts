@@ -132,5 +132,7 @@ void test('optional source fields validate bounds while unknown services and est
   const delivery = createDelivery(SourceSchema.parse(extended), '11000000-0000-4000-8000-000000000004');
   assert.equal(delivery.servicePlan, undefined);
   assert.equal(lineServiceStatuses(delivery)[0]?.planningBlockedReason, 'unknown_service');
-  assert.deepEqual(remainingWorkEstimate(delivery), { minutes: null, basis: 'unknown', sourceMinutes: null });
+  assert.deepEqual(remainingWorkEstimate(delivery), { minutes: null, basis: 'unknown', sourceMinutes: null,
+    calculation: { algorithmVersion: 'remaining_work_v2', baseMinutes: null, factorPercent: null, fixedMinutes: 0,
+      adjustmentVersion: null, adjustmentStatus: 'not_configured' } });
 });

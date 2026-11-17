@@ -13,6 +13,7 @@ import { ActionForm, Field } from './ui';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { DetailIcon } from './delivery-detail-presentation';
+import { WorkEstimateSummary } from './work-estimate-summary';
 
 export function DeliveryWorkTime({ line, estimate, unit, label, version, save, standard, applyStandard }: {
   line: LineService; estimate: LineWorkTime; unit: string; label: string; version: number;
@@ -72,9 +73,9 @@ export function DeliveryWorkTime({ line, estimate, unit, label, version, save, s
   </section>;
 }
 
-export function WorkEstimateProvenance({ basis }: { basis: RemainingWorkEstimate['basis'] }) {
+export function WorkEstimateProvenance({ basis, estimate }: { basis: RemainingWorkEstimate['basis']; estimate?: RemainingWorkEstimate }) {
   const t = useTranslations('workTimes');
   const label = basis === 'local_operation_rates' ? 'local' : basis === 'mixed_operation_rates' ? 'mixed'
     : basis === 'proportional_remaining_operations' ? 'source' : null;
-  return label ? <span className="mt-1 block text-xs text-muted-foreground">{t(label)}</span> : null;
+  return <>{label ? <span className="mt-1 block text-xs text-muted-foreground">{t(label)}</span> : null}{estimate ? <WorkEstimateSummary estimate={estimate} compact /> : null}</>;
 }

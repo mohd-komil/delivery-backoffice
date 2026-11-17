@@ -18,10 +18,10 @@ import { deleteDirectoryEntry, type DeletableDirectory } from './directory-delet
 import { assertSignatureRefusalCorrectionPreservesCargo, assertStandaloneAppointment } from './route-reservations';
 import { assertPlanningReady, retainWorkServiceDefault } from './planning';
 import { instantiateAssignment } from './assignment-snapshot';
-import { ChangeWorkQuantitiesInput, ChangeWorkTimesInput, ConfirmPriorWorkInput, SignatureRefusalReviewInput } from './contracts';
+import { ChangeWorkQuantitiesInput, ChangeWorkTimeAdjustmentsInput, ChangeWorkTimesInput, ConfirmPriorWorkInput, SignatureRefusalReviewInput } from './contracts';
 import { confirmPriorWork } from '../domain/rules';
 import { latestPriorWork } from '../domain/prior-work';
-import { changeRequiredWork, changeWorkTimes, lineServiceStatuses } from '../domain/rules';
+import { changeRequiredWork, changeWorkTimeAdjustments, changeWorkTimes, lineServiceStatuses } from '../domain/rules';
 import { deliveryGeography } from '../domain/delivery-geography';
 import { calendarDestinationOptions, CalendarFilterCrewSchema, CalendarGeographyRowSchema } from './calendar-filters';
 
@@ -96,6 +96,15 @@ export class Operations {
     await this.store.mutate(id, version, principal, { name: 'work_times.updated', details: (delivery) => ({
       ...change, saved: delivery.servicePlan?.timeEstimates?.find(({ sourceLineId }) => sourceLineId === change.sourceLineId) ?? null,
     }) }, (delivery) => changeWorkTimes(delivery, change, principal, new Date().toISOString()));
+    return this.store.detail(id);
+  }
+  async workTimeAdjustments(id: string, input: unknown, principal: OperatorActor) {
+    const command = ChangeWorkTimeAdjustmentsInput.parse(input);
+    const { version, requestId, reason, ...fields } = command;
+    await this.store.mutate(id, version, principal, { name: 'work_times.adjustments_updated', details: (delivery) => ({
+      reason, saved: delivery.workTimeAdjustments,
+    }) }, (delivery) => changeWorkTimeAdjustments(delivery, fields, principal, new Date().toISOString()),
+    { id: requestId, input: { ...command, actorId: principal.id } });
     return this.store.detail(id);
   }
   async workQuantities(id: string, input: unknown, principal: OperatorActor) {

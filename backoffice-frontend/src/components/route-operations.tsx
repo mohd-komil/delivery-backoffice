@@ -21,6 +21,7 @@ import { RouteAmendment } from './route-amendment';
 import { RouteReconciliation } from './route-reconciliation';
 import { RouteAttestations } from './route-operation-fields';
 import { RouteRevisionFacts } from './route-revision-facts';
+import { RouteTimingComparison } from './route-timing-comparison';
 
 export type RouteOperationCatalogs = { participants: readonly Participant[]; crews: readonly Crew[]; vehicles: readonly Vehicle[]; points: readonly RoutePoint[] };
 const historyLabels: Readonly<Partial<Record<string, keyof typeof routeMessages>>> = {
@@ -36,7 +37,7 @@ export function RouteOperationsPanel({ routeId, revision, fallbackReview, catalo
   const t = useTranslations('routeOperations');
   const pub = useTranslations('routePublication');
   const locale = useLocale();
-  const [tab, setTab] = useState<'current' | 'history'>('current');
+  const [tab, setTab] = useState<'current' | 'history' | 'timing'>('current');
   const [refresh, setRefresh] = useState(0);
   const [loaded, setLoaded] = useState<{ key: string; value: RouteOperations } | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
@@ -80,7 +81,7 @@ export function RouteOperationsPanel({ routeId, revision, fallbackReview, catalo
   return <section className="grid min-w-0 gap-4">
     <div className="flex flex-wrap items-start justify-between gap-3"><p className="text-xs text-muted-foreground">{t('revision', { version: data.version })}</p><Button type="button" variant="outline" disabled={pending} onClick={() => setRefresh((value) => value + 1)}>{t('refresh')}</Button></div>
     <div className="flex flex-wrap items-center gap-2"><span className={`badge ${data.status === 'cancelled' ? 'warning' : data.status === 'closed' ? 'success' : 'info'}`}>{t(data.status)}</span><strong>{data.name}</strong></div>
-    <div className="flex flex-wrap gap-2" role="group" aria-label={t('title')}>{(['current', 'history'] as const).map((value) => <Button type="button" key={value} variant={tab === value ? 'default' : 'outline'} aria-pressed={tab === value} onClick={() => setTab(value)}>{t(value)}</Button>)}</div>
+    <div className="flex flex-wrap gap-2" role="group" aria-label={t('title')}>{(['current', 'history', 'timing'] as const).map((value) => <Button type="button" key={value} variant={tab === value ? 'default' : 'outline'} aria-pressed={tab === value} onClick={() => setTab(value)}>{t(value)}</Button>)}</div>
     {failure ? <Notice tone="error">{errorMessage(failure, locale)}</Notice> : null}
     <div hidden={tab !== 'current'} className="grid min-w-0 gap-4">
       <p className="text-sm text-muted-foreground">{t('currentHelp')}</p>
@@ -104,6 +105,7 @@ export function RouteOperationsPanel({ routeId, revision, fallbackReview, catalo
       {data.status === 'returned' ? <CloseRoute data={data} command={command} disabled={!ready || pending} /> : null}
     </div>
     <div hidden={tab !== 'history'}><RouteHistory data={data} /></div>
+    {tab === 'timing' ? <RouteTimingComparison key={routeId} routeId={routeId} refreshKey={key} /> : null}
   </section>;
 }
 

@@ -10,6 +10,7 @@ export class RouteLifecycleController {
   constructor(@Inject(RouteLifecycle) private readonly routes: RouteLifecycle) {}
   @Get('reconciliation-owners') owners() { return this.routes.owners(); }
   @Get(':id/operations') get(@Param('id') id: string, @Req() request: unknown) { return this.routes.get(IdSchema.parse(id).toLowerCase(), actor(request)); }
+  @Get(':id/timing') timing(@Param('id') id: string, @Req() request: unknown) { return this.routes.timing(IdSchema.parse(id).toLowerCase(), actor(request)); }
   @Get(':id/revisions/:version') revision(@Param('id') id: string, @Param('version') version: string) {
     return this.routes.revision(IdSchema.parse(id).toLowerCase(), z.coerce.number().int().positive().parse(version));
   }

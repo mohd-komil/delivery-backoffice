@@ -12,6 +12,16 @@ Cargo starts as unknown; blank quantity is unknown, never zero. Warehouse accept
 
 History is read-only. Selecting a revision shows its frozen work/resource snapshots, operational event notes, declarations, acceptance receipts and closure exception. Current owner names may be resolved from the protected operator directory; immutable IDs remain available if that optional name lookup fails. A disappeared source line is explicitly labelled as a visit-snapshot remainder, with no planning availability.
 
+## Plan vs actual
+
+Open a published route in **Routes** and select **Plan vs actual**. The comparison uses the latest approved publication or amendment and identifies its revision. History still shows the earlier plans. The view compares the route's departure, return and durations, and shows the scheduled and recorded times for each stop.
+
+Actual values come from route and visit records. A visit start records the beginning of work. Actual arrival, travel and waiting remain unknown when the needed events are missing. A skipped or unserved stop can show its recorded reason without a fabricated work duration. Confirmed return uses the physical return time, which can differ from the time the operator entered it.
+
+The read-only endpoint is `GET /api/routes/:id/timing` and requires a Backoffice session. Its response names the published plan revision and exposes nullable planned, actual and difference values. When a planned stop has no complete work interval, the route's aggregate actual work time stays unknown. A cancelled route excludes later standalone activity on a released visit.
+
+The route's total travel includes the return leg. Per-stop travel is the incoming leg for that stop. A temporary refresh failure retains the last loaded comparison and expanded stop details with an error notice; a denied session clears the report.
+
 All commands use existing authenticated HTTP requests, runtime validation, optimistic versions and stable request IDs for retries. The browser does not infer authorization from capability flags; the backend remains authoritative. Existing publication/readback 404 responses only disable the new controls. Publication availability comes from the backend capability, with local rollout recorded separately from isolated acceptance.
 
 ## Local verification and isolated browser

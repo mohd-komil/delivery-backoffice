@@ -115,7 +115,7 @@ export function JobSummary({ job }: { job: RouteJob }) {
     <p className="mt-1 break-words text-xs text-muted-foreground">{[job.address, job.city].filter(Boolean).join(', ') || t('missingAddress')}</p>
     <p className="mt-1 break-words font-mono text-xs text-muted-foreground">{[job.pickingName, ...job.orderNames].join(' · ')}</p>
     {job.distanceKm !== null ? <p className="mt-1 text-xs text-muted-foreground">{t('distance', { km: f.number(job.distanceKm, { maximumFractionDigits: 1 }) })}</p> : null}
-    {job.remainingWorkEstimate ? <WorkEstimateProvenance basis={job.remainingWorkEstimate.basis} /> : null}
+    {job.remainingWorkEstimate ? <WorkEstimateProvenance basis={job.remainingWorkEstimate.basis} estimate={job.remainingWorkEstimate} /> : null}
   </>;
 }
 

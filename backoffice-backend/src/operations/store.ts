@@ -6,7 +6,7 @@ import { Database, rows } from '../database/database';
 import { DeliverySchema, type Delivery, type OperatorActor } from '../domain/model';
 import { AuditSchema, FileSchema } from './contracts';
 import { FILE_COLUMNS } from '../evidence/file-record';
-import { appointmentScopeReviewReason, assignmentCoverage, closureBlockers, deriveProgress, deriveViews, lineServiceStatuses, lineWorkTimes, priorWorkStatus } from '../domain/rules';
+import { appointmentScopeReviewReason, assignmentCoverage, closureBlockers, deriveProgress, deriveViews, lineServiceStatuses, lineWorkTimes, priorWorkStatus, remainingWorkEstimate } from '../domain/rules';
 
 const DataRow=z.object({data:z.unknown()});
 type MutationAudit = string | {
@@ -71,6 +71,6 @@ export class DeliveryStore {
     const deliveredQuantities = lineServices.map(({ sourceLineId, deliveredMilli }) => ({ sourceLineId, deliveredMilli }));
     const appointmentPlanning=delivery.appointments.map((appointment)=>({appointmentId:appointment.id,reviewReason:appointmentScopeReviewReason(delivery,appointment),
       canEdit:appointment.status==='booked'||appointment.status==='in_progress'&&!appointment.workScope&&appointment.results.length===0}));
-    return {delivery,views:deriveViews(delivery),progress:deriveProgress(delivery),coverage:assignmentCoverage(delivery),deliveredQuantities,lineServices,lineWorkTimes:lineWorkTimes(delivery),priorWork:priorWorkStatus(delivery),appointmentPlanning,closureBlockers:closureBlockers(delivery),files,history};
+    return {delivery,views:deriveViews(delivery),progress:deriveProgress(delivery),coverage:assignmentCoverage(delivery),deliveredQuantities,lineServices,lineWorkTimes:lineWorkTimes(delivery),remainingWorkEstimate:remainingWorkEstimate(delivery),priorWork:priorWorkStatus(delivery),appointmentPlanning,closureBlockers:closureBlockers(delivery),files,history};
   }
 }

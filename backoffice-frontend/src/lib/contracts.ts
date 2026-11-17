@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { inboxMapAreaResultSchema } from './inbox-map-area';
-import { lineWorkTimeSchema, savedWorkTimeSchema } from './work-times';
+import { lineWorkTimeSchema, savedWorkTimeSchema, workTimeAdjustmentsSchema, workTimeCalculationSchema } from './work-times';
 import { serviceTypeSchema } from './service-types';
 export { serviceTypeSchema, type ServiceType } from './service-types';
 
@@ -187,6 +187,7 @@ export const deliverySchema = z.object({
   id, version: z.number().int().positive(), source: sourceSchema, sourceReview: z.boolean(), sourceChanged: z.boolean(),
   sourceWarnings: z.array(z.string()), instructions: instructionsSchema, appointments: z.array(appointmentSchema),
   servicePlan: servicePlanSchema.optional(),
+  workTimeAdjustments: workTimeAdjustmentsSchema.optional(),
   priorWorkRevisions: z.array(priorWorkRevisionSchema).optional(),
   issues: z.array(issueSchema), returnRequests: z.array(returnSchema),
   workHolds: z.array(z.object({ id, sourceLineId: z.number().int().positive(), reason: z.literal('damage'), appointmentId: id.optional(), resultId: id.optional(), issueId: id.optional(),
@@ -257,6 +258,7 @@ export const remainingWorkEstimateSchema = z.object({
   missingSourceLineIds: z.array(z.number().int().positive()).optional(),
   staleSourceLineIds: z.array(z.number().int().positive()).optional(),
   exceedsLimit: z.boolean().optional(),
+  calculation: workTimeCalculationSchema.optional(),
 });
 export type RemainingWorkEstimate = z.infer<typeof remainingWorkEstimateSchema>;
 export const deliveryPlanningSchema = z.object({
@@ -289,7 +291,7 @@ export const fileSchema = documentSnapshotSchema.extend({ deliveryId: id, size: 
 export const auditSchema = z.object({ id, actorId: id, at: databaseTime, actorName: z.string(), action: z.string(), details: z.unknown() });
 export const appointmentPlanningSchema = z.object({ appointmentId: id, reviewReason: z.enum(['missing_scope', 'source_review', 'source_changed', 'work_changed', 'stock_pending', 'damage_hold']).nullable(), canEdit: z.boolean() });
 export type AppointmentPlanning = z.infer<typeof appointmentPlanningSchema>;
-export const detailSchema = z.object({ delivery: deliverySchema, views: z.array(z.string()), progress: z.enum(['inbox', 'planned', 'assigned', 'in_progress', 'partially_completed', 'awaiting_closure', 'completed']), coverage: z.object({ assigned: z.number().int(), total: z.number().int() }), deliveredQuantities: z.array(z.object({ sourceLineId: z.number().int(), deliveredMilli: z.number().int() })), lineServices: z.array(lineServiceSchema).optional(), lineWorkTimes: z.array(lineWorkTimeSchema).optional(), priorWork: priorWorkSchema.optional(), appointmentPlanning: z.array(appointmentPlanningSchema).optional(), closureBlockers: z.array(z.string()), files: z.array(fileSchema), history: z.array(auditSchema) });
+export const detailSchema = z.object({ delivery: deliverySchema, views: z.array(z.string()), progress: z.enum(['inbox', 'planned', 'assigned', 'in_progress', 'partially_completed', 'awaiting_closure', 'completed']), coverage: z.object({ assigned: z.number().int(), total: z.number().int() }), deliveredQuantities: z.array(z.object({ sourceLineId: z.number().int(), deliveredMilli: z.number().int() })), lineServices: z.array(lineServiceSchema).optional(), lineWorkTimes: z.array(lineWorkTimeSchema).optional(), remainingWorkEstimate: remainingWorkEstimateSchema.optional(), priorWork: priorWorkSchema.optional(), appointmentPlanning: z.array(appointmentPlanningSchema).optional(), closureBlockers: z.array(z.string()), files: z.array(fileSchema), history: z.array(auditSchema) });
 export type DeliveryDetail = z.infer<typeof detailSchema>;
 export const importSchema = z.object({ id, status: z.string(), startedAt: databaseTime, finishedAt: databaseTime.nullable(), processed: z.number(), error: nullableText, details: z.array(z.string()) });
 export type ImportRun = z.infer<typeof importSchema>;

@@ -25,6 +25,9 @@ export class OperationsController {
   @Patch('deliveries/:id/work-times') workTimes(@Param('id') id: string, @Body() body: unknown, @Req() request: unknown) {
     return this.operations.workTimes(IdSchema.parse(id), body, actor(request));
   }
+  @Patch('deliveries/:id/work-time-adjustments') workTimeAdjustments(@Param('id') id: string, @Body() body: unknown, @Req() request: unknown) {
+    return this.operations.workTimeAdjustments(IdSchema.parse(id), body, actor(request));
+  }
   @Patch('deliveries/:id/work-quantities') workQuantities(@Param('id') id: string, @Body() body: unknown, @Req() request: unknown) {
     return this.operations.workQuantities(IdSchema.parse(id), body, actor(request));
   }

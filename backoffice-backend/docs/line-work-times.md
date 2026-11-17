@@ -4,7 +4,7 @@ When Odoo does not supply operational services or work times, the dispatcher mai
 
 Each operation accepts an integer from 1 to 1440 minutes per source unit. These are elapsed minutes for the whole team, excluding travel. They are not person-hours and are not divided by the number of participants. A blank value means unknown; clearing all three values removes the local time override. Only operations required by the line's current service can be entered.
 
-The backend multiplies the remaining delivery, installation and collection quantities by their respective rates, then rounds the resulting elapsed time up to a whole minute. Completed work is excluded. Booking and route scopes use their own selected quantities. The same estimator supplies Inbox, Nearby work and Routes; the browser does not calculate its own competing estimate. Route travel remains explicitly approximate without a road provider.
+The base estimate multiplies the remaining delivery, installation and collection quantities by their respective rates and adds their elapsed times. Completed work is excluded. Booking and route scopes use their own selected quantities. The server retains the exact fractional total until applying any site factor, then rounds up to a whole minute. The same estimator supplies Inbox, Nearby work and Routes. Route travel remains explicitly approximate without a road provider.
 
 ## Ownership and reimport
 
@@ -15,6 +15,22 @@ Normal reimport replaces the source snapshot while preserving local service over
 If a required operation has neither a usable local rate nor a usable source estimate, its duration is unknown. An old aggregate source estimate can supply only the existing proportional approximation, explicitly labelled as such; it is not presented as a genuine per-line Odoo rate. Local, source-proportional and mixed estimates have distinct labels. A stale local rate never silently falls back to a fresh-looking source estimate.
 
 Saving uses `PATCH /api/deliveries/:id/work-times` with the current delivery version and exact source line ID. Normal operator/admin authorization, source-review guards, in-progress work restrictions and optimistic concurrency apply. Changing rates changes the route work fingerprint so a previously reviewed duration requires review.
+
+## Site adjustments and fixed work
+
+The delivery-level work-time adjustments extend the existing rates. The operator records a percentage for variable work, fixed minutes per visit, and separate fixed minutes for delivery, installation and collection. These inputs describe elapsed time for the whole team. Their source and assumptions explain which preparation, unloading, access, parking or waiting they cover. Company standards still require operational confirmation.
+
+The calculation first sums only the selected remaining quantities multiplied by their operation rates, applies the percentage, and rounds up once. It then adds the visit allowance once and each selected operation's fixed allowance once. Several product lines do not multiply these allowances. A later installation-only visit includes the visit and installation allowances. A visit with no selected work takes zero minutes.
+
+The Inbox total treats the outstanding work as one candidate visit. Each separately planned visit uses its own selected scope and receives its own visit allowance. Splitting work between visits therefore changes the combined fixed time.
+
+For example, two delivery units at 10 minutes and one installation unit at 30 minutes give 50 base minutes. A 125% factor gives 63 rounded minutes. Adding 5 visit minutes, 4 delivery minutes and 8 installation minutes gives 80 minutes. A later visit for one installation unit gives 38 variable minutes plus 5 visit and 8 installation minutes, or 51 minutes. These numbers illustrate the arithmetic and are not approved company norms.
+
+Save through `PATCH /api/deliveries/:id/work-time-adjustments` with the current delivery version, a request ID and a reason. The saved settings retain their own version, source, assumptions, author, time and reviewed site-context fingerprint. Null means unknown. Zero explicitly means no fixed allowance, and 100% leaves variable work unchanged. Missing allowances for unselected operations do not prevent a calculation. Missing inputs for selected work make its total unknown.
+
+Existing deliveries without adjustments retain their base estimate with an explicit base-only status. Configured adjustments require review after the destination or access instructions change. Non-neutral additions to a proportional source estimate also require the operator to confirm that the source estimate excludes those additions. This confirmation prevents silently counting the same work twice.
+
+Delivery details, Inbox, Nearby and Routes use the same server result and expose the calculation version, base time, factor, fixed time and total. Per-line values show variable work only. Route work fingerprints include applied adjustments and the reviewed site context. A manual route duration stays selected until the operator explicitly changes it. Saved publication and signed-report snapshots retain their recorded values.
 
 ## Verification and demonstrations
 

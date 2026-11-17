@@ -7,14 +7,15 @@ import { AssignInput, AuditSchema, AvailabilitySchema, BookInput, CALENDAR_MAX_D
 import { RouteCreateInputSchema, RoutePreviewInputSchema, RouteSuggestInputSchema, RouteUpdateInputSchema } from './routing/contracts';
 import { PublicationDetailSchema, PublicationReviewInputSchema, PublicationReviewSchema, PublicationSummarySchema, PublishInputSchema } from './routing/publication-contracts';
 import { RouteActionInputSchema, RouteAmendInputSchema, RouteAmendReviewInputSchema, RouteAmendReviewSchema, RouteCancelInputSchema, RouteCloseInputSchema, RouteOperationsSchema, RouteReasonInputSchema, RouteReconcileInputSchema, RouteReturnInputSchema, RouteRevisionSchema, RouteWarehouseReceiptInputSchema } from './routing/lifecycle-contracts';
+import { RouteTimingSchema } from './routing/timing-contracts';
 import { AddressSuggestionInputSchema, AddressSuggestionResponseSchema } from './routing/address-suggestion';
 import { ConfirmEntranceInputSchema, EntranceResponseSchema } from './routing/entrances';
 import { GeocodingAcceptInputSchema, GeocodingInputSchema, GeocodingResponseSchema } from './routing/geocoding';
 import { RouteDetailSchema, RouteDraftListSchema, RouteJobsSchema, RoutePreviewSchema, RouteSuggestionSchema } from './routing/http-contracts';
 import { DeliveryListQuerySchema, DeliveryListSchema, DeliveryMapQuerySchema } from './operations/delivery-list';
 import { DeliveryMapSchema } from './routing/delivery-map';
-import { ChangeWorkQuantitiesInput, ChangeWorkTimesInput, ConfirmPriorWorkInput, DirectoryDeletionSchema, SignatureRefusalReviewInput, WorkReadinessInput, WorkScopeInput } from './operations/contracts';
-import { LineWorkTimeStatusSchema, PriorWorkStatusSchema } from './domain/model';
+import { ChangeWorkQuantitiesInput, ChangeWorkTimeAdjustmentsInput, ChangeWorkTimesInput, ConfirmPriorWorkInput, DirectoryDeletionSchema, SignatureRefusalReviewInput, WorkReadinessInput, WorkScopeInput } from './operations/contracts';
+import { LineWorkTimeStatusSchema, PriorWorkStatusSchema, RemainingWorkEstimateSchema } from './domain/model';
 import { SourceReviewInputSchema, SourceReviewSchema } from './integration/source-review';
 import { DispatcherDetailSchema, DispatcherListSchema, DispatcherOwnerSchema, DispatcherQuerySchema, DispatcherUpdateSchema } from './dispatcher/contracts';
 import { ApplyTimeStandardSchema, CreateTimeStandardSchema, TimeStandardDetailSchema, TimeStandardSchema, UpdateTimeStandardSchema } from './planning/time-standard-contracts';
@@ -24,13 +25,14 @@ import { DeliveryGeographySchema } from './domain/delivery-geography';
 import { CalendarFilterOptionsSchema } from './operations/calendar-filters';
 
 const User=z.object({id:z.string().uuid(),name:z.string(),role:z.enum(['admin','operator'])});
-const Detail=z.object({delivery:DeliverySchema,views:z.array(ViewSchema),progress:z.enum([...ViewSchema.options,'awaiting_closure']),coverage:z.object({assigned:z.number(),total:z.number()}),deliveredQuantities:z.array(z.object({sourceLineId:z.number(),deliveredMilli:z.number()})),lineServices:z.array(LineServiceStatusSchema),lineWorkTimes:z.array(LineWorkTimeStatusSchema),priorWork:PriorWorkStatusSchema,appointmentPlanning:z.array(z.object({appointmentId:z.string().uuid(),reviewReason:ScopeReviewReasonSchema,canEdit:z.boolean()})),closureBlockers:z.array(z.string()),files:z.array(FileSchema),history:z.array(AuditSchema)});
+const Detail=z.object({delivery:DeliverySchema,views:z.array(ViewSchema),progress:z.enum([...ViewSchema.options,'awaiting_closure']),coverage:z.object({assigned:z.number(),total:z.number()}),deliveredQuantities:z.array(z.object({sourceLineId:z.number(),deliveredMilli:z.number()})),lineServices:z.array(LineServiceStatusSchema),lineWorkTimes:z.array(LineWorkTimeStatusSchema),remainingWorkEstimate:RemainingWorkEstimateSchema,priorWork:PriorWorkStatusSchema,appointmentPlanning:z.array(z.object({appointmentId:z.string().uuid(),reviewReason:ScopeReviewReasonSchema,canEdit:z.boolean()})),closureBlockers:z.array(z.string()),files:z.array(FileSchema),history:z.array(AuditSchema)});
 const List=DeliveryListSchema;
 const Calendar=z.array(z.object({deliveryId:z.string().uuid(),pickingName:z.string(),customerName:z.string(),geography:DeliveryGeographySchema,appointment:AppointmentSchema}));
 const TaskTemplateHttp=TaskTemplateSchema.extend({requiredSkillIds:SkillIdsSchema});
 const routeLifecycleResponses: Record<string, z.ZodType> = {
   '/routes/reconciliation-owners': z.array(ResponsibleParticipantSchema),
   '/routes/{id}/operations': RouteOperationsSchema,
+  '/routes/{id}/timing': RouteTimingSchema,
   '/routes/{id}/revisions/{version}': RouteRevisionSchema,
   '/routes/{id}/depart': RouteOperationsSchema,
   '/routes/{id}/amend-review': RouteAmendReviewSchema,
@@ -61,6 +63,7 @@ const routeDescriptions: Record<string, string> = {
   '/dispatcher/queue/{key}': 'Assigns only the follow-up coordinator, next action and note, with optimistic coordination version, current-facts fingerprint and actor-bound idempotent request ID. Original issue, source, evidence and warehouse workflows retain authority. Existing workflow owner/action is separate. Underlying workflow resolves the case automatically; resolved history is read only.',
   '/routes/reconciliation-owners': 'Admin/operator directory of dispatcher IDs and names for explicit remaining-work ownership. No credentials or participant logins are returned.',
   '/routes/{id}/operations': 'Current published-route projection: version, stop sequence, exact order-line actuals and remaining work, resource snapshots, permission/readiness capabilities, actual return, manual reconciliation, warehouse receipts and revision history. Missing source or packaging information stays explicit. Travel remains labelled as estimated.',
+  '/routes/{id}/timing': 'Compare the latest published or explicitly amended plan against confirmed route and visit times. Missing time observations and incomplete duration totals are null. Stop reasons are shown where recorded.',
   '/routes/{id}/revisions/{version}': 'Read an immutable published-route revision and its captured runtime, preserving the author and reason in route history. The version path parameter is a positive integer, not an appointment or delivery version.',
   '/routes/{id}/depart': 'Admin/operator records actual route departure with a required reason. Requires a ready confirmed next stop and people/vehicle returned from prior trips including their turnaround buffer. Later unconfirmed stops do not prevent departure; each Start still enforces its own confirmation.',
   '/routes/{id}/amend-review': 'Read-only review of an unstarted, unloaded published route. Explicitly confirms no departure or loading, rechecks exact remaining work, resources and full trip feasibility, and returns a fingerprint plus visits requiring renewed customer confirmation. Does not reserve or modify anything.',
@@ -104,6 +107,7 @@ const routeDescriptions: Record<string, string> = {
   '/crew/visits/{id}/documents/{fileId}': 'Downloads a private document for a booked or in-progress visit. Requires a current assignment and scope covering the delivery, visit and linked product line.',
   '/deliveries/{id}/services': 'Sets the default service or overrides one unprocessed product line. A null line override inherits the default. Recorded line work preserves its service. The plan is locked while a visit is in progress.',
   '/deliveries/{id}/work-times': 'Sets local team elapsed minutes per source unit for each required operation of this exact source line. Nullable integer rates are 1–1440; all-null clears the override. Uses the delivery version and operator authorization. Local values survive reimport; quantities rescale while product, order, UoM or destination changes require review and re-save. Closed deliveries, source review and work currently in progress are protected. Source snapshots, published route timings and prior reports remain unchanged. lineWorkTimes returns saved inputs, current remaining estimates and their provenance.',
+  '/deliveries/{id}/work-time-adjustments': 'Explicitly saves reviewed site and fixed visit allowances with source, assumptions, optimistic delivery version and actor-bound idempotent request. A factor from 1 to 1000 percent applies to exact selected unit-work time before rounding up once. Fixed visit minutes count once per non-empty visit, and operation fixed minutes count once only when that operation is selected. Nullable values remain unknown; zero fixed minutes and factor 100 are explicit neutral settings. Changed address or site instructions require review. Source-total or mixed estimates require explicit sourceEstimateExcludesAdjustments acknowledgement before non-neutral allowances are added. Advanced totals are shared by Inbox, Nearby, delivery detail and Routes; per-line estimates remain base-only. Closed, source-review and in-progress deliveries are protected. Configuration is local and versioned; published route timings and signed reports retain their recorded values.',
   '/deliveries/{id}/source-review': 'Shows the accepted source and one deduplicated pending update with exact differences, source revision coverage and reconciliation blockers. External source documents are not mapped. Admin/operator may accept a compatible candidate or explicitly keep the accepted scope with a reason, current delivery version and stable request ID. Older row revisions cannot regress accepted data; missing/ineligible/incomplete records cannot be approved. Published or started work must finish its lifecycle before source acceptance. Started Crew reports continue against accepted work; new planning/start/closure waits for review. Local work choices, signed results and published snapshots remain preserved.',
   '/deliveries/{id}/work-quantities': 'Sets the total required quantities for each operation of one exact order line. Uses integer milli-quantities, current delivery version and an operator explanation. Null restores the line service defaults. Totals must cover completed and reserved work. History records the prior and new totals and the source line.',
   '/deliveries/{id}/prior-work': 'Confirms work completed before this application for this exact physical picking line. Requires an operator, optimistic version, idempotent requestId, explicit current-picking acknowledgement, source reference and explanation. Integer milli-quantities replace the previous confirmed balance through an immutable revision; they are never inferred from Odoo order totals or summed across revisions. Unknown differs from confirmed zero. Planned or recorded local work locks edits. Source identity, UoM and quantity conflicts block further planning and closure. Crew reports and their signatures remain separate; a fully confirmed opening balance may close without an invented visit.',
@@ -134,6 +138,7 @@ const routes=[
   ['post','/deliveries/{id}/geocoding/accept',GeocodingAcceptInputSchema],
   ['patch','/deliveries/{id}/services',ChangeServiceInput],
   ['patch','/deliveries/{id}/work-times',ChangeWorkTimesInput],
+  ['patch','/deliveries/{id}/work-time-adjustments',ChangeWorkTimeAdjustmentsInput],
   ['patch','/deliveries/{id}/work-quantities',ChangeWorkQuantitiesInput],
   ['patch','/deliveries/{id}/prior-work',ConfirmPriorWorkInput],
   ['get','/deliveries/{id}/source-review',null],['post','/deliveries/{id}/source-review',SourceReviewInputSchema],
@@ -180,7 +185,7 @@ const routes=[
   ['get','/routes/{id}',null],['post','/routes',RouteCreateInputSchema],['patch','/routes/{id}',RouteUpdateInputSchema],
   ['get','/routes/publication-capability',null],['get','/routes/{id}/publication',null],
   ['post','/routes/{id}/publication-review',PublicationReviewInputSchema],['post','/routes/{id}/publish',PublishInputSchema],
-  ['get','/routes/reconciliation-owners',null],['get','/routes/{id}/operations',null],['get','/routes/{id}/revisions/{version}',null],
+  ['get','/routes/reconciliation-owners',null],['get','/routes/{id}/operations',null],['get','/routes/{id}/timing',null],['get','/routes/{id}/revisions/{version}',null],
   ['post','/routes/{id}/depart',RouteReasonInputSchema],['post','/routes/{id}/amend-review',RouteAmendReviewInputSchema],
   ['post','/routes/{id}/amend',RouteAmendInputSchema],['post','/routes/{id}/cancel',RouteCancelInputSchema],
   ['post','/routes/{id}/abort',RouteReasonInputSchema],['post','/routes/{id}/stops/{appointmentId}/skip',RouteReasonInputSchema],

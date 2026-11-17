@@ -8,6 +8,7 @@ import { rows } from '../database/database';
 import { AppointmentSchema, IdSchema, type Appointment, type Delivery, type OperatorActor } from '../domain/model';
 import { destinationAddressKey } from '../domain/destination-address';
 import { appointmentScopeReviewReason, assignedParticipant, customerConfirmationStatus, DomainError, requireReviewedVisitScope } from '../domain/rules';
+import { recordedActualStart } from '../execution/visit';
 import { Participants } from '../operations/participants';
 import { Skills } from '../operations/skills';
 import { DeliveryStore } from '../operations/store';
@@ -22,6 +23,8 @@ import { RouteActionInputSchema, RouteAmendInputSchema, RouteAmendReviewInputSch
   RouteOperationsSchema, RouteReasonInputSchema, RouteReconcileInputSchema, RouteReturnInputSchema, RouteRevisionSchema, RouteRuntimeSchema, RouteWarehouseReceiptInputSchema } from './lifecycle-contracts';
 import { normalizeRouteDraftInput, routeJob, RouteDrafts } from './service';
 import { cargoReceiptBalance, routeLineStatuses } from './line-status';
+import { buildRouteTiming } from './timing';
+import { RouteTimingSchema } from './timing-contracts';
 
 const RecordSchema = z.object({ id: IdSchema, version: z.number().int().positive(), status: PublicationStatusSchema, data: PublicationSnapshotSchema, runtime: RouteRuntimeSchema });
 const ProvenanceSchema = z.object({ originalAppointment: AppointmentSchema.nullable(), serviceReservations: z.array(z.object({ resource: z.string() })),
@@ -89,6 +92,25 @@ export class RouteLifecycle {
     return this.store.db.source.transaction('REPEATABLE READ', async (manager) => {
       const state = await this.load(manager, id); await this.authorize(manager, state, actor);
       return this.describe(manager, state, actor);
+    });
+  }
+
+  async timing(id: string, actor: OperatorActor) {
+    return this.store.db.source.transaction('REPEATABLE READ', async (manager) => {
+      const state = await this.load(manager, id);
+      await this.authorize(manager, state, actor);
+      const { row } = state;
+      const [revision] = await rows(manager, z.object({ version: z.number().int().positive(), at: z.date() }),
+        `SELECT version,at FROM route_revision WHERE route_id=$1 AND action IN ('route.published','route.amended')
+          ORDER BY version DESC LIMIT 1`, [id]);
+      // Only explicit amendments replace data.review. Later runtime events preserve that published timeline.
+      const plan = revision ? { version: revision.version, at: revision.at.toISOString() }
+        : { version: 1, at: row.data.publishedAt };
+      const stops = await Promise.all(state.stops.map(async ({ appointment, deliveryId }) => ({
+        appointment,
+        recordedStartAt: row.status === 'cancelled' ? null : await recordedActualStart(manager, deliveryId, appointment),
+      })));
+      return RouteTimingSchema.parse(buildRouteTiming(id, row.status, plan, row.data.review, row.runtime, stops));
     });
   }
 

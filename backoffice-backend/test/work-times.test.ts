@@ -29,7 +29,9 @@ void test('local team minutes distinguish same-SKU order lines and selected frac
   let delivery: Delivery = changeServicePlan(fixture(), { defaultService: 'delivery_installation' });
   delivery = times(delivery, 101, 10, 30);
   delivery = times(delivery, 202, 20, 40);
-  assert.deepEqual(remainingWorkEstimate(delivery), { minutes: 200, basis: 'local_operation_rates', sourceMinutes: null });
+  assert.deepEqual(remainingWorkEstimate(delivery), { minutes: 200, basis: 'local_operation_rates', sourceMinutes: null,
+    calculation: { algorithmVersion: 'remaining_work_v2', baseMinutes: 200, factorPercent: null, fixedMinutes: null,
+      adjustmentVersion: null, adjustmentStatus: 'not_configured' } });
   assert.equal(estimateWorkMinutes(delivery, [work(101, 0, 1000)]).minutes, 30);
   assert.equal(estimateWorkMinutes(delivery, [work(202, 500, 250)]).minutes, 20);
   assert.equal(estimateWorkMinutes(delivery, [work(101, 125)]).minutes, 2);
@@ -45,15 +47,21 @@ void test('source total remains proportional; mixed fallback is explicit and sta
   delivery.source.estimatedMinutes = 80;
   delivery = times(delivery, 101, 5, null);
   const selected = [work(101, 1000, 1000)];
-  assert.deepEqual(estimateWorkMinutes(delivery, selected), { minutes: 15, basis: 'mixed_operation_rates', sourceMinutes: 80 });
+  assert.deepEqual(estimateWorkMinutes(delivery, selected), { minutes: 15, basis: 'mixed_operation_rates', sourceMinutes: 80,
+    calculation: { algorithmVersion: 'remaining_work_v2', baseMinutes: 15, factorPercent: null, fixedMinutes: null,
+      adjustmentVersion: null, adjustmentStatus: 'not_configured' } });
   assert.equal(lineWorkTimes(delivery)[0]?.basis, 'mixed');
   delivery.source.customer.postalCode = '98124';
-  assert.deepEqual(estimateWorkMinutes(delivery, selected), { minutes: null, basis: 'unknown', sourceMinutes: 80, staleSourceLineIds: [101] });
+  assert.deepEqual(estimateWorkMinutes(delivery, selected), { minutes: null, basis: 'unknown', sourceMinutes: 80, staleSourceLineIds: [101],
+    calculation: { algorithmVersion: 'remaining_work_v2', baseMinutes: null, factorPercent: null, fixedMinutes: null,
+      adjustmentVersion: null, adjustmentStatus: 'not_configured' } });
   assert.equal(lineWorkTimes(delivery)[0]?.deliveryMinutesPerUnit, 5, 'Stale saved input stays reviewable');
   delivery = times(delivery, 101, 5, null);
   assert.equal(estimateWorkMinutes(delivery, selected).minutes, 15);
   delivery = times(delivery, 101, null, null);
-  assert.deepEqual(estimateWorkMinutes(delivery, selected), { minutes: 20, basis: 'proportional_remaining_operations', sourceMinutes: 80 });
+  assert.deepEqual(estimateWorkMinutes(delivery, selected), { minutes: 20, basis: 'proportional_remaining_operations', sourceMinutes: 80,
+    calculation: { algorithmVersion: 'remaining_work_v2', baseMinutes: 20, factorPercent: null, fixedMinutes: null,
+      adjustmentVersion: null, adjustmentStatus: 'not_configured' } });
 });
 
 void test('local rates allow mixed units and selected known work while missing selected operations remain unknown', () => {
@@ -68,7 +76,9 @@ void test('local rates allow mixed units and selected known work while missing s
   const other = delivery.source.items[1]; assert.ok(other); other.uom = 'kg'; other.uomId = 2;
   delivery = times(delivery, 202, null, null, 11);
   assert.deepEqual(estimateWorkMinutes(delivery, [work(101, 1000), work(202, 0, 0, 1000)]),
-    { minutes: 18, basis: 'local_operation_rates', sourceMinutes: null });
+    { minutes: 18, basis: 'local_operation_rates', sourceMinutes: null,
+      calculation: { algorithmVersion: 'remaining_work_v2', baseMinutes: 18, factorPercent: null, fixedMinutes: null,
+        adjustmentVersion: null, adjustmentStatus: 'not_configured' } });
   const changed = structuredClone(delivery); const first = changed.source.items[0]; assert.ok(first); first.productId++;
   assert.equal(estimateWorkMinutes(changed, [work(202, 0, 0, 1000)]).minutes, 11, 'An unrelated stale line cannot poison selected work');
 });
@@ -93,13 +103,17 @@ void test('service changes preserve local estimates, and route work fingerprints
 
 void test('unsupported work and oversized estimates require explicit review', () => {
   const empty = fixture(); empty.source.items = [];
-  assert.deepEqual(remainingWorkEstimate(empty), { minutes: null, basis: 'unknown', sourceMinutes: null });
+  assert.deepEqual(remainingWorkEstimate(empty), { minutes: null, basis: 'unknown', sourceMinutes: null,
+    calculation: { algorithmVersion: 'remaining_work_v2', baseMinutes: null, factorPercent: null, fixedMinutes: 0,
+      adjustmentVersion: null, adjustmentStatus: 'not_configured' } });
   let delivery: Delivery = changeServicePlan(fixture(), { defaultService: 'delivery_only' });
   assert.throws(() => times(delivery, 101, 10, 20), (error: unknown) => error instanceof DomainError && error.code === 'WORK_TIME_OPERATION_UNAVAILABLE');
   const rates: WorkTimeRates = { deliveryMinutesPerUnit: 1440, installationMinutesPerUnit: null, collectionMinutesPerUnit: null };
   delivery = changeWorkTimes(delivery, { sourceLineId: 101, ...rates }, actor, at);
   const item = delivery.source.items[0]; assert.ok(item); item.quantity = 10;
-  assert.deepEqual(estimateWorkMinutes(delivery, [work(101, 10_000)]), { minutes: null, basis: 'unknown', sourceMinutes: null, exceedsLimit: true });
+  assert.deepEqual(estimateWorkMinutes(delivery, [work(101, 10_000)]), { minutes: null, basis: 'unknown', sourceMinutes: null, exceedsLimit: true,
+    calculation: { algorithmVersion: 'remaining_work_v2', baseMinutes: 14400, factorPercent: null, fixedMinutes: null,
+      adjustmentVersion: null, adjustmentStatus: 'not_configured' } });
   delivery.sourceReview = true;
   assert.throws(() => times(delivery, 101, 10, null), (error: unknown) => error instanceof DomainError && error.code === 'SOURCE_REVIEW_REQUIRED');
 });

@@ -289,6 +289,36 @@ export const LineWorkTimeSchema = WorkTimeRatesSchema.extend({
   timeStandard: WorkTimeStandardSnapshotSchema.optional(),
 }).strict();
 export type LineWorkTime = z.infer<typeof LineWorkTimeSchema>;
+export const WorkTimeAdjustmentFieldsSchema = z.object({
+  factorPercent: z.number().int().min(1).max(1000).nullable(),
+  visitMinutes: z.number().int().min(0).max(1440).nullable(),
+  deliveryMinutes: z.number().int().min(0).max(1440).nullable(),
+  installationMinutes: z.number().int().min(0).max(1440).nullable(),
+  collectionMinutes: z.number().int().min(0).max(1440).nullable(),
+  sourceEstimateExcludesAdjustments: z.boolean().default(false),
+  sourceReference: TextSchema,
+  assumptions: TextSchema,
+}).strict();
+export const WorkTimeAdjustmentsSchema = WorkTimeAdjustmentFieldsSchema.extend({
+  version: z.number().int().positive(),
+  contextFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  updatedAt: InstantSchema,
+  updatedBy: OperatorSnapshotSchema,
+}).strict();
+export type WorkTimeAdjustments = z.infer<typeof WorkTimeAdjustmentsSchema>;
+export const WorkTimeAdjustmentFieldSchema = z.enum([
+  'factorPercent', 'visitMinutes', 'deliveryMinutes', 'installationMinutes', 'collectionMinutes', 'sourceEstimateExcludesAdjustments',
+]);
+export const WorkTimeCalculationSchema = z.object({
+  algorithmVersion: z.literal('remaining_work_v2'),
+  baseMinutes: z.number().int().nonnegative().safe().nullable(),
+  factorPercent: z.number().int().min(1).max(1000).nullable(),
+  fixedMinutes: z.number().int().nonnegative().max(5760).nullable(),
+  adjustmentVersion: z.number().int().positive().nullable(),
+  adjustmentStatus: z.enum(['not_configured', 'current', 'needs_review', 'incomplete']),
+  missingFields: z.array(WorkTimeAdjustmentFieldSchema).optional(),
+}).strict();
+export type WorkTimeCalculation = z.infer<typeof WorkTimeCalculationSchema>;
 export const ServicePlanSchema = z.object({
   defaultService: ServiceTypeSchema.nullable(),
   defaultOrigin: z.enum(['source', 'local']).optional(),
@@ -349,6 +379,7 @@ export const RemainingWorkEstimateSchema = z.object({
   missingSourceLineIds: z.array(z.number().int().positive()).optional(),
   staleSourceLineIds: z.array(z.number().int().positive()).optional(),
   exceedsLimit: z.boolean().optional(),
+  calculation: WorkTimeCalculationSchema.optional(),
 }).strict();
 export type RemainingWorkEstimate = z.infer<typeof RemainingWorkEstimateSchema>;
 export const LineWorkTimeStatusSchema = WorkTimeRatesSchema.extend({
@@ -536,6 +567,7 @@ export const DeliverySchema = z.object({
   sourceImport: SourceImportStateSchema.optional(),
   sourceWarnings: z.array(TextSchema).max(100),
   servicePlan: ServicePlanSchema.optional(),
+  workTimeAdjustments: WorkTimeAdjustmentsSchema.optional(),
   priorWorkRevisions: z.array(PriorWorkRevisionSchema).max(5000).optional(),
   routePoint: GeoPointSchema.optional(),
   addressGeography: AddressGeographySchema.optional(),

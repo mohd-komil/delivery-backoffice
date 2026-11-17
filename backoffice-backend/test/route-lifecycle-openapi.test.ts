@@ -18,7 +18,7 @@ const operationSchema = z.object({
 void test('OpenAPI exposes route lifecycle endpoints with exact session boundaries and HTTP 200 responses', () => {
   const document = apiDocument();
   const expected = [
-    ['get', '/routes/reconciliation-owners'], ['get', '/routes/{id}/operations'], ['get', '/routes/{id}/revisions/{version}'],
+    ['get', '/routes/reconciliation-owners'], ['get', '/routes/{id}/operations'], ['get', '/routes/{id}/timing'], ['get', '/routes/{id}/revisions/{version}'],
     ['post', '/routes/{id}/depart'], ['post', '/routes/{id}/amend-review'], ['post', '/routes/{id}/amend'],
     ['post', '/routes/{id}/cancel'], ['post', '/routes/{id}/abort'], ['post', '/routes/{id}/stops/{appointmentId}/skip'],
     ['post', '/routes/{id}/returning'], ['post', '/routes/{id}/return'], ['post', '/routes/{id}/reconcile'],
@@ -34,11 +34,14 @@ void test('OpenAPI exposes route lifecycle endpoints with exact session boundari
     assert.ok(operation.responses['409'], path);
     assert.ok(operation.description.length > 30, path);
   }
-  for (const forbidden of ['cancel', 'amend', 'abort', 'reconcile', 'warehouse-receipts', 'close']) {
+  for (const forbidden of ['cancel', 'amend', 'abort', 'reconcile', 'warehouse-receipts', 'close', 'timing']) {
     assert.equal(document.paths[`/crew/routes/{id}/${forbidden}`], undefined);
   }
   const revision = operationSchema.parse(document.paths['/routes/{id}/revisions/{version}']?.['get']);
   assert.deepEqual(revision.parameters.find(({ name }) => name === 'version')?.schema, { type: 'integer', minimum: 1 });
+  const timing = operationSchema.parse(document.paths['/routes/{id}/timing']?.get);
+  const timingOutput = objectSchema.parse(timing.responses['200']?.content?.['application/json'].schema);
+  assert.deepEqual(timingOutput.required, ['id', 'status', 'plan', 'route', 'stops']);
 });
 
 void test('OpenAPI represents actual return, cancellation confirmations and live exact-line output without transform fallbacks', () => {
